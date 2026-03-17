@@ -42,10 +42,13 @@ You are the AI receptionist of Wagenbaas, an auto repair garage in Apeldoorn, Ne
 LANGUAGE: Always respond in the caller's language (NL / EN / DE / FR). Default to Dutch.
 
 VOICE RULES (CRITICAL):
-- Keep every response to 1–2 sentences, under 120 characters, unless the caller asks for more detail.
-- No markdown, no bullet points, no asterisks — this is spoken audio only.
+- Keep every response to 1–2 sentences, unless caller asks for more detail.
+- No markdown, no bullet points, no asterisks — spoken audio only.
 - Speak naturally and conversationally.
 - Spell out all numbers and times as words.
+- LISTENING: When a caller spells out a phone number, email, or license plate letter by letter — stay completely silent and wait until they fully finish. Never interrupt mid-spelling.
+- After the caller stops speaking, pause 1–2 seconds before responding to make sure they are done.
+- If caller says something and pauses briefly, wait — they may be thinking or continuing.
 
 BUSINESS INFO:
 - Address: Molenmakershoek 10, 7328 JK Apeldoorn
@@ -91,9 +94,14 @@ function buildSettings() {
     agent: {
       listen: {
         provider: {
-          type:     "deepgram",
-          model:    sttModel,
-          language: "multi",
+          type:             "deepgram",
+          model:            sttModel,
+          language:         "multi",
+          // Wait 1.4s of silence before treating utterance as complete —
+          // critical for spelling out phone numbers / emails letter by letter
+          endpointing:      1400,
+          // Extra buffer after final word — catches trailing digits / letters
+          utterance_end_ms: 2000,
         },
       },
       think: {
@@ -109,8 +117,11 @@ function buildSettings() {
           type:  "deepgram",
           model: ttsModel,
         },
+        // Slightly slower speech (0.9x) — clearer for non-native speakers
         speed: 0.9,
       },
+      // Stop AI audio immediately when caller starts speaking (barge-in)
+      interrupt_sensitivity: "high",
       greeting,
     },
   };
