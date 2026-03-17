@@ -97,11 +97,11 @@ function buildSettings() {
           type:             "deepgram",
           model:            sttModel,
           language:         "multi",
-          // Wait 1.4s of silence before treating utterance as complete —
+          // Wait 1.9s of silence before treating utterance as complete —
           // critical for spelling out phone numbers / emails letter by letter
-          endpointing:      1400,
+          endpointing:      1900,
           // Extra buffer after final word — catches trailing digits / letters
-          utterance_end_ms: 2000,
+          utterance_end_ms: 3400,
         },
       },
       think: {
@@ -120,8 +120,10 @@ function buildSettings() {
         // Slightly slower speech (0.9x) — clearer for non-native speakers
         speed: 0.9,
       },
+      // Keep listening even while AI is speaking — full duplex
       // Stop AI audio immediately when caller starts speaking (barge-in)
       interrupt_sensitivity: "high",
+      listen_during_speech: true,
       greeting,
     },
   };
