@@ -941,7 +941,9 @@
         history.push({ role:'assistant', content: reply });
         if(d.appointment) showToast('✅ Appointment saved!','green');
         if(d.callback)    showToast('📞 Callback request saved!','orange');
-        vaSpeak(reply);
+        // 2.2s natural pause before AI starts speaking
+        vaSetStatus('...');
+        setTimeout(()=>{ if(vaActive) vaSpeak(reply); }, 2200);
       } catch {
         if(vaActive){ vaSetStatus('Connection error — try again'); vaListenOnce(); }
       }
@@ -980,11 +982,12 @@
     vaCallHistory.push({ role:'assistant', content: greeting });
     history.push({ role:'assistant', content: greeting });
 
-    // Wait briefly for voices to load, then speak greeting
+    // 2.2s pause then greet — matches natural phone call rhythm
+    const doGreet = ()=> setTimeout(()=>{ if(vaActive) vaSpeak(greeting); }, 2200);
     if(speechSynthesis.getVoices().length === 0){
-      speechSynthesis.onvoiceschanged = ()=>{ speechSynthesis.onvoiceschanged = null; vaSpeak(greeting); };
+      speechSynthesis.onvoiceschanged = ()=>{ speechSynthesis.onvoiceschanged = null; doGreet(); };
     } else {
-      vaSpeak(greeting);
+      doGreet();
     }
   }
 

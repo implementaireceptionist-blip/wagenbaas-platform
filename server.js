@@ -177,7 +177,11 @@ app.post("/api/chat", async (req, res) => {
 
   } catch (err) {
     console.error("AI error:", err.message);
-    res.status(500).json({ error: "Something went wrong. Please try again or contact us at +31 64 77 000 88." });
+    const isKeyMissing = !process.env.ANTHROPIC_API_KEY || err.message?.includes("401") || err.message?.includes("API key");
+    const msg = isKeyMissing
+      ? "AI service not configured. Please contact us at +31 64 77 000 88 or info@wagenbaas.nl."
+      : "Something went wrong. Please try again or contact us at +31 64 77 000 88.";
+    res.status(500).json({ error: msg });
   }
 });
 
@@ -232,7 +236,13 @@ app.patch("/api/admin/callbacks/:id", adminAuth, (req, res) => {
 });
 
 // ── Routes ────────────────────────────────────────────────────────────────────
-app.get("/api/health", (req, res) => res.json({ status: "ok", provider: AI_PROVIDER, channels }));
+app.get("/api/health", (req, res) => res.json({
+  status:   "ok",
+  provider: AI_PROVIDER,
+  channels,
+  apiKey:   !!process.env.ANTHROPIC_API_KEY,
+  deepgram: !!process.env.DEEPGRAM_API_KEY,
+}));
 app.get("/tiktok", (req, res) => res.sendFile(path.join(__dirname, "public", "tiktok.html")));
 app.get("/boek", (req, res) => res.sendFile(path.join(__dirname, "public", "tiktok.html")));
 app.get("/admin", (req, res) => res.sendFile(path.join(__dirname, "public", "admin.html")));
