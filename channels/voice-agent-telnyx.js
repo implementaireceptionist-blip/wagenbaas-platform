@@ -399,29 +399,47 @@ function register(app, { server } = {}) {
       silenceTimer  = setTimeout(onSilence, 4000);
     }
 
+    // Detect caller language from transcript history (simple heuristic)
+    function detectLang() {
+      const history = callHistory.get(sessionId) || [];
+      const userText = history.filter(h => h.role === "user").map(h => h.content).join(" ").toLowerCase();
+      if (!userText) return "nl"; // no speech yet → default Dutch
+      const enWords = /\b(hello|hi|yes|no|please|thank|want|need|help|appointment|car|when|what|how|can|i|you|the|a|is|my|have)\b/;
+      return enWords.test(userText) ? "en" : "nl";
+    }
+
     function onSilence() {
       if (!dgWs || dgWs.readyState !== WS.OPEN) return;
       silenceStrike++;
+      const lang = detectLang();
 
       if (silenceStrike === 1) {
         // First alert — 4 s of silence
-        const msg = "Hallo? Bent u er nog? Ik kan u niet goed horen. Waarmee kan ik u helpen?";
+        const msg = lang === "en"
+          ? "Hello? Are you still there? I can't hear you. How can I help you?"
+          : "Hallo? Bent u er nog? Ik kan u niet goed horen. Waarmee kan ik u helpen?";
         log("Silence detected (4 s) — injecting first alert");
         try { dgWs.send(JSON.stringify({ type: "InjectAgentMessage", message: msg })); } catch {}
-        // Wait 5 s more before second alert
-        silenceTimer = setTimeout(onSilence, 5000);
+        silenceTimer = setTimeout(onSilence, 4000); // 4 s more → 8 s total
       } else {
         // Second alert — suggest alternative channels
-        const smsOn  = process.env.ENABLE_SMS       === "true";
-        const waOn   = process.env.ENABLE_WHATSAPP  === "true";
-        let alt = "";
-        if (smsOn && waOn)      alt = "via SMS of WhatsApp op +31 64 77 000 88";
-        else if (smsOn)         alt = "via SMS op +31 64 77 000 88";
-        else if (waOn)          alt = "via WhatsApp op +31 64 77 000 88";
-        else                    alt = "via e-mail op info@wagenbaas.nl";
-
-        const msg = `Bent u er nog? Ik kan u niet horen. U kunt ons ook bereiken ${alt} — dan helpen we u verder. Tot ziens!`;
-        log("Silence detected (9 s) — injecting second alert with channel suggestions");
+        const smsOn = process.env.ENABLE_SMS      === "true";
+        const waOn  = process.env.ENABLE_WHATSAPP === "true";
+        let msg;
+        if (lang === "en") {
+          let alt = smsOn && waOn ? "via SMS or WhatsApp at +31 64 77 000 88"
+                  : smsOn        ? "via SMS at +31 64 77 000 88"
+                  : waOn         ? "via WhatsApp at +31 64 77 000 88"
+                  :                "by email at info@wagenbaas.nl";
+          msg = `Are you still there? I can't hear you. You can also reach us ${alt} — we're happy to help. Goodbye!`;
+        } else {
+          let alt = smsOn && waOn ? "via SMS of WhatsApp op +31 64 77 000 88"
+                  : smsOn        ? "via SMS op +31 64 77 000 88"
+                  : waOn         ? "via WhatsApp op +31 64 77 000 88"
+                  :                "via e-mail op info@wagenbaas.nl";
+          msg = `Bent u er nog? Ik kan u niet horen. U kunt ons ook bereiken ${alt} — wij helpen u graag. Tot ziens!`;
+        }
+        log("Silence detected (8 s) — injecting second alert with channel suggestions");
         try { dgWs.send(JSON.stringify({ type: "InjectAgentMessage", message: msg })); } catch {}
         silenceTimer = null;
       }
