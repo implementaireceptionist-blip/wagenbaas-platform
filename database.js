@@ -24,13 +24,15 @@ async function initDB() {
       created_at   DATETIME DEFAULT (datetime('now'))
     );
     CREATE TABLE IF NOT EXISTS appointments (
-      id           INTEGER PRIMARY KEY AUTOINCREMENT,
-      name         TEXT, phone TEXT, email TEXT,
-      car_brand    TEXT, car_model TEXT, car_year TEXT, license TEXT,
-      service      TEXT, pref_date TEXT, pref_time TEXT, notes TEXT,
-      channel      TEXT DEFAULT 'webchat',
-      status       TEXT DEFAULT 'nieuw',
-      created_at   DATETIME DEFAULT (datetime('now'))
+      id               INTEGER PRIMARY KEY AUTOINCREMENT,
+      name             TEXT, phone TEXT, email TEXT,
+      car_brand        TEXT, car_model TEXT, car_year TEXT, license TEXT,
+      service          TEXT, pref_date TEXT, pref_time TEXT, notes TEXT,
+      channel          TEXT DEFAULT 'webchat',
+      status           TEXT DEFAULT 'nieuw',
+      voice_session_id TEXT,
+      confidence       TEXT DEFAULT 'confirmed',
+      created_at       DATETIME DEFAULT (datetime('now'))
     );
     CREATE TABLE IF NOT EXISTS callbacks (
       id           INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -59,6 +61,10 @@ async function initDB() {
       created_at   DATETIME DEFAULT (datetime('now'))
     );
   `);
+  // Migrate existing DBs — add columns if they don't exist yet
+  try { db.run(`ALTER TABLE appointments ADD COLUMN voice_session_id TEXT`); } catch {}
+  try { db.run(`ALTER TABLE appointments ADD COLUMN confidence TEXT DEFAULT 'confirmed'`); } catch {}
+
   save();
 }
 
@@ -92,6 +98,30 @@ const db_ops = {
   insertAppointment: (p) => run(`INSERT INTO appointments (name,phone,email,car_brand,car_model,car_year,license,service,pref_date,pref_time,notes,channel) VALUES ($name,$phone,$email,$car_brand,$car_model,$car_year,$license,$service,$pref_date,$pref_time,$notes,$channel)`, p),
   allAppointments: () => all(`SELECT * FROM appointments ORDER BY id DESC`),
   updateAppointmentStatus: (p) => run(`UPDATE appointments SET status=$status WHERE id=$id`, p),
+
+  // Upsert voice appointment — insert immediately, update as more info arrives
+  upsertVoiceAppointment: (p) => {
+    const existing = get(`SELECT id FROM appointments WHERE voice_session_id=$session_id`, { $session_id: p.$session_id });
+    if (existing) {
+      run(`UPDATE appointments SET
+        name       = CASE WHEN $name      != '' THEN $name      ELSE name       END,
+        phone      = CASE WHEN $phone     != '' THEN $phone     ELSE phone      END,
+        email      = CASE WHEN $email     != '' THEN $email     ELSE email      END,
+        license    = CASE WHEN $license   != '' THEN $license   ELSE license    END,
+        service    = CASE WHEN $service   != '' THEN $service   ELSE service    END,
+        pref_date  = CASE WHEN $pref_date != '' THEN $pref_date ELSE pref_date  END,
+        pref_time  = CASE WHEN $pref_time != '' THEN $pref_time ELSE pref_time  END,
+        notes      = CASE WHEN $notes     != '' THEN $notes     ELSE notes      END,
+        confidence = $confidence,
+        status     = CASE WHEN $confidence = 'high' THEN 'nieuw' ELSE status END
+      WHERE voice_session_id = $session_id`, p);
+    } else {
+      run(`INSERT INTO appointments
+        (name,phone,email,license,service,pref_date,pref_time,notes,channel,voice_session_id,confidence,status)
+        VALUES ($name,$phone,$email,$license,$service,$pref_date,$pref_time,$notes,$channel,$session_id,$confidence,
+          CASE WHEN $confidence='high' THEN 'nieuw' ELSE 'pending-voice' END)`, p);
+    }
+  },
 
   // Callbacks
   insertCallback: (p) => run(`INSERT INTO callbacks (name,phone,reason,channel) VALUES ($name,$phone,$reason,$channel)`, p),

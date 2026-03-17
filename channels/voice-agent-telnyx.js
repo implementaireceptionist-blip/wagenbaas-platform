@@ -9,30 +9,21 @@
  *   → WS  /api/telnyx/stream   (Telnyx Media Streams)
  *   → WSS agent.deepgram.com/agent
  *   → mulaw audio back to Telnyx → caller hears AI
- *
- * Why Telnyx over Twilio:
- *   - Dutch (+31) numbers available
- *   - $0.004/min inbound (vs $0.0085 Twilio)
- *   - $20 free credit on signup
- *   - Carrier-grade quality in NL
- *
- * Latency stack:
- *   STT : Deepgram nova-3 (multi-lang NL/EN/DE/FR)
- *   LLM : Anthropic Claude Haiku 4.5 (via Deepgram Voice Agent)
- *   TTS : Deepgram Aura-2 (<200 ms)
- *   Audio: mulaw 8kHz — Telnyx native format
- * ─────────────────────────────────────────────────────────────
  */
 
-const url  = require("url");
-const WS   = require("ws");
-const { db } = require("../database");
+const url        = require("url");
+const WS         = require("ws");
+const Anthropic  = require("@anthropic-ai/sdk");
+const { db }     = require("../database");
 
 const CHANNEL = "voice-agent";
 const DG_URL  = "wss://agent.deepgram.com/agent";
 
 // callControlId → fromNumber (set by webhook before WS connects)
 const pendingCalls = new Map();
+
+// sessionId → [{role, content}]  — live transcript per call
+const callHistory  = new Map();
 
 // ── System prompt (voice-optimised) ──────────────────────────────────────────
 function getPrompt() {
@@ -77,7 +68,9 @@ CLOSING: Always end with "Is er nog iets anders waar ik u mee kan helpen?"
 `.trim();
 }
 
-// ── Deepgram Voice Agent settings ────────────────────────────────────────────
+// ── Deepgram Voice Agent settings ─────────────────────────────────────────────
+// Only documented Deepgram Voice Agent API params — extras cause SettingsApplied
+// to silently fail which breaks listen/speak behaviour entirely.
 function buildSettings() {
   const sttModel = process.env.DEEPGRAM_AGENT_STT_MODEL || "nova-3";
   const llmModel = process.env.DEEPGRAM_AGENT_LLM_MODEL || "claude-haiku-4-5-20251001";
@@ -94,14 +87,11 @@ function buildSettings() {
     agent: {
       listen: {
         provider: {
-          type:             "deepgram",
-          model:            sttModel,
-          language:         "multi",
-          // Wait 1.9s of silence before treating utterance as complete —
-          // critical for spelling out phone numbers / emails letter by letter
-          endpointing:      1900,
-          // Extra buffer after final word — catches trailing digits / letters
-          utterance_end_ms: 3400,
+          type:        "deepgram",
+          model:       sttModel,
+          language:    "multi",
+          // 1.9s silence → end of utterance (important for phone number spelling)
+          endpointing: 1900,
         },
       },
       think: {
@@ -117,13 +107,9 @@ function buildSettings() {
           type:  "deepgram",
           model: ttsModel,
         },
-        // Slightly slower speech (0.9x) — clearer for non-native speakers
-        speed: 0.9,
       },
-      // Keep listening even while AI is speaking — full duplex
-      // Stop AI audio immediately when caller starts speaking (barge-in)
+      // Barge-in: stop AI speech immediately when caller speaks
       interrupt_sensitivity: "high",
-      listen_during_speech: true,
       greeting,
     },
   };
@@ -165,26 +151,122 @@ function dbTranscript(sessionId, role, content, fromNumber) {
   } catch {}
 }
 
+// ── Appointment extraction from voice transcript ──────────────────────────────
+// Keywords that suggest appointment intent — trigger extraction
+const APPT_KEYWORDS = /\b(afspraak|appointment|boek|book|datum|date|tijd|time|maandag|dinsdag|woensdag|donderdag|vrijdag|zaterdag|monday|tuesday|wednesday|thursday|friday|saturday|morgen|tomorrow|volgende week|next week|apk|onderhoud|reparatie|banden|airco|naam|name|telefoon|phone|kenteken|license)\b/i;
+
+async function extractAndSave(sessionId, history, fromNumber) {
+  if (history.length < 2) return;
+
+  const fullText = history.map(h => `${h.role.toUpperCase()}: ${h.content}`).join("\n");
+  if (!APPT_KEYWORDS.test(fullText)) return;
+
+  const key = process.env.ANTHROPIC_API_KEY;
+  if (!key) return;
+
+  try {
+    const client = new Anthropic({ apiKey: key });
+    const response = await client.messages.create({
+      model:      "claude-haiku-4-5-20251001",
+      max_tokens: 400,
+      messages: [{
+        role: "user",
+        content: `Extract appointment data from this phone call transcript. Return ONLY valid JSON or the word null.
+
+TRANSCRIPT:
+${fullText}
+
+Return JSON (use null for unknown fields):
+{
+  "name": string|null,
+  "phone": string|null,
+  "email": string|null,
+  "license": string|null,
+  "service": string|null,
+  "pref_date": "YYYY-MM-DD"|null,
+  "pref_time": "HH:MM"|null,
+  "notes": string|null,
+  "confidence": "low"|"medium"|"high",
+  "type": "appointment"|"lead"|"callback"|"none"
+}
+
+confidence = high if name+phone+date confirmed, medium if partial, low if just intent.
+Return null if no booking intent at all.`,
+      }],
+    });
+
+    const raw = response.content[0]?.text?.trim();
+    if (!raw || raw === "null") return;
+
+    const data = safeJSON(raw);
+    if (!data || data.type === "none") return;
+
+    const phone = data.phone || fromNumber || "";
+
+    if (data.type === "appointment" || data.confidence !== "low") {
+      db.upsertVoiceAppointment({
+        $session_id: sessionId,
+        $name:       data.name       || "",
+        $phone:      phone,
+        $email:      data.email      || "",
+        $license:    data.license    || "",
+        $service:    data.service    || "",
+        $pref_date:  data.pref_date  || "",
+        $pref_time:  data.pref_time  || "",
+        $notes:      data.notes      || "",
+        $channel:    CHANNEL,
+        $confidence: data.confidence || "low",
+      });
+      console.log(`[VoiceTelnyx:${sessionId}] Appointment upserted — confidence:${data.confidence} type:${data.type}`);
+    }
+
+    // Also save as lead if we have at least a name or phone
+    if ((data.name || phone) && data.type !== "none") {
+      const existing = db.findLeadByContact({ $phone: phone, $email: data.email || "" });
+      if (!existing) {
+        db.insertLead({
+          $name:   data.name  || "",
+          $phone:  phone,
+          $email:  data.email || "",
+          $source: CHANNEL,
+          $notes:  `Voice call. Service: ${data.service || "?"}. Date: ${data.pref_date || "?"}`,
+        });
+      }
+    }
+
+    // Save callback intent
+    if (data.type === "callback" && phone) {
+      db.insertCallback({
+        $name:    data.name   || "",
+        $phone:   phone,
+        $reason:  data.notes  || "Callback requested via voice",
+        $channel: CHANNEL,
+      });
+    }
+
+  } catch (err) {
+    console.error(`[VoiceTelnyx:${sessionId}] Extraction error:`, err.message);
+  }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 function register(app, { server } = {}) {
   if (!server) throw new Error("[voice-agent-telnyx] requires { server }");
 
   // ── 1. TeXML Webhook — inbound call ─────────────────────────────────────────
   app.post("/api/telnyx/voice", (req, res) => {
-    const host      = req.headers["x-forwarded-host"] || req.headers.host;
-    const proto     = (req.headers["x-forwarded-proto"] || "https").toLowerCase();
-    const wsProto   = proto === "http" ? "ws" : "wss";
+    const host    = req.headers["x-forwarded-host"] || req.headers.host;
+    const proto   = (req.headers["x-forwarded-proto"] || "https").toLowerCase();
+    const wsProto = proto === "http" ? "ws" : "wss";
 
-    // Telnyx sends call_control_id in body for TeXML calls
-    const callId    = req.body?.CallControlId || req.body?.call_control_id || "";
-    const from      = req.body?.From || req.body?.from || "";
+    const callId = req.body?.CallControlId || req.body?.call_control_id || "";
+    const from   = req.body?.From || req.body?.from || "";
 
     if (callId) pendingCalls.set(callId, from);
 
     const streamUrl = `${wsProto}://${host}/api/telnyx/stream?callId=${encodeURIComponent(callId)}`;
     const statusUrl = `${proto}://${host}/api/telnyx/status`;
 
-    // Telnyx TeXML: <Start><Stream> to open media stream, then <Pause> to keep call alive
     const texml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Start>
@@ -196,9 +278,8 @@ function register(app, { server } = {}) {
     res.type("text/xml").send(texml);
   });
 
-  // ── 2. Call Status Webhook — missed / failed calls ───────────────────────────
+  // ── 2. Call Status Webhook ───────────────────────────────────────────────────
   app.post("/api/telnyx/status", (req, res) => {
-    // Telnyx sends either TeXML statusCallback or webhook events
     const eventType   = req.body?.data?.event_type || req.body?.event_type || "";
     const payload     = req.body?.data?.payload     || req.body || {};
     const hangupCause = payload?.hangup_cause        || payload?.CallStatus || "";
@@ -211,12 +292,7 @@ function register(app, { server } = {}) {
 
     if (isMissed || (eventType === "call.hangup" && duration < 5)) {
       try {
-        db.insertMissedCall({
-          $caller:   from,
-          $call_sid: callId,
-          $status:   "gemist",
-          $duration: duration,
-        });
+        db.insertMissedCall({ $caller: from, $call_sid: callId, $status: "gemist", $duration: duration });
         db.insertStat({ $event: "missed_call", $channel: CHANNEL, $meta: from || null });
         console.log(`[VoiceTelnyx] Missed call from ${from} — cause: ${hangupCause || "short call"}`);
       } catch (e) {
@@ -245,6 +321,9 @@ function register(app, { server } = {}) {
     let   dgWs       = null;
     let   keepAlive  = null;
 
+    // Live transcript buffer for this call
+    callHistory.set(sessionId, []);
+
     const log = (msg) => {
       console.log(`[VoiceTelnyx:${sessionId}] ${msg}`);
       dbLog(sessionId, msg);
@@ -252,11 +331,7 @@ function register(app, { server } = {}) {
 
     function connectDG() {
       const key = process.env.DEEPGRAM_API_KEY;
-      if (!key) {
-        log("ERROR: DEEPGRAM_API_KEY not set");
-        telnyxWs.close();
-        return;
-      }
+      if (!key) { log("ERROR: DEEPGRAM_API_KEY not set"); telnyxWs.close(); return; }
 
       dgWs = new WS(DG_URL, { headers: { Authorization: `Token ${key}` } });
 
@@ -265,22 +340,16 @@ function register(app, { server } = {}) {
         dgWs.send(JSON.stringify(buildSettings()));
 
         keepAlive = setInterval(() => {
-          if (dgWs.readyState === WS.OPEN) {
-            dgWs.send(JSON.stringify({ type: "KeepAlive" }));
-          }
+          if (dgWs.readyState === WS.OPEN) dgWs.send(JSON.stringify({ type: "KeepAlive" }));
         }, 5000);
       });
 
       dgWs.on("message", (data, isBinary) => {
-        // Binary = audio → forward to Telnyx
+        // Binary = TTS audio → forward to Telnyx caller
         if (isBinary || Buffer.isBuffer(data)) {
           if (telnyxWs.readyState === WS.OPEN && streamId) {
             const payload = (Buffer.isBuffer(data) ? data : Buffer.from(data)).toString("base64");
-            telnyxWs.send(JSON.stringify({
-              event:     "media",
-              stream_id: streamId,
-              media:     { payload },
-            }));
+            telnyxWs.send(JSON.stringify({ event: "media", stream_id: streamId, media: { payload } }));
           }
           return;
         }
@@ -292,19 +361,37 @@ function register(app, { server } = {}) {
           case "Welcome":
             log("Deepgram: Welcome");
             break;
+
           case "SettingsApplied":
             log("Deepgram: Settings applied — agent ready");
             break;
-          case "ConversationText":
-            if (msg.content) {
-              const role = msg.role === "user" ? "user" : "agent";
-              console.log(`[VoiceTelnyx transcript] ${role}: ${msg.content}`);
-              dbTranscript(sessionId, role, msg.content, fromNumber);
+
+          case "ConversationText": {
+            if (!msg.content) break;
+            const role = msg.role === "user" ? "user" : "agent";
+            console.log(`[VoiceTelnyx transcript] ${role}: ${msg.content}`);
+            dbTranscript(sessionId, role, msg.content, fromNumber);
+
+            // Append to live history
+            const history = callHistory.get(sessionId) || [];
+            history.push({ role, content: msg.content });
+            callHistory.set(sessionId, history);
+
+            // After agent speaks (= full turn complete), try to extract appointment data
+            if (role === "agent") {
+              extractAndSave(sessionId, history, fromNumber).catch(() => {});
             }
             break;
+          }
+
           case "UserStartedSpeaking":
-            log("Barge-in detected");
+            log("Barge-in — caller is speaking");
             break;
+
+          case "AgentStartedSpeaking":
+            log("Agent speaking");
+            break;
+
           case "Error":
             log(`Deepgram error: ${msg.message || JSON.stringify(msg)}`);
             break;
@@ -318,7 +405,7 @@ function register(app, { server } = {}) {
       });
     }
 
-    // ── Handle Telnyx events ──────────────────────────────────────────────────
+    // ── Handle Telnyx events ────────────────────────────────────────────────
     telnyxWs.on("message", (raw) => {
       const msg = safeJSON(raw.toString("utf8"));
       if (!msg || !msg.event) return;
@@ -332,12 +419,16 @@ function register(app, { server } = {}) {
           fromNumber = msg?.start?.from || pendingCalls.get(callId) || fromNumber;
           sessionId  = msg?.start?.call_control_id || callId || sessionId;
 
+          // Re-key history if sessionId changed
+          if (!callHistory.has(sessionId)) callHistory.set(sessionId, []);
+
           log(`Call started — from=${fromNumber || "?"} streamId=${streamId}`);
           db.insertStat?.({ $event: "voice_agent_call", $channel: CHANNEL, $meta: fromNumber || null });
           connectDG();
           break;
 
         case "media":
+          // Forward caller audio to Deepgram — always, even while AI is speaking
           if (!dgWs || dgWs.readyState !== WS.OPEN) return;
           {
             const audio = Buffer.from(msg.media?.payload || "", "base64");
@@ -347,14 +438,26 @@ function register(app, { server } = {}) {
 
         case "stop":
           log("Call ended");
-          cleanup();
-          pendingCalls.delete(callId);
+          // Final extraction pass on full transcript
+          {
+            const history = callHistory.get(sessionId) || [];
+            extractAndSave(sessionId, history, fromNumber)
+              .catch(() => {})
+              .finally(() => {
+                callHistory.delete(sessionId);
+                cleanup();
+                pendingCalls.delete(callId);
+              });
+          }
           break;
       }
     });
 
     telnyxWs.on("close", () => {
       log("Telnyx WS closed");
+      const history = callHistory.get(sessionId) || [];
+      extractAndSave(sessionId, history, fromNumber).catch(() => {});
+      callHistory.delete(sessionId);
       cleanup();
       pendingCalls.delete(callId);
     });
