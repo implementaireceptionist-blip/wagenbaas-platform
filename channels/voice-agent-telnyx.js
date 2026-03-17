@@ -90,6 +90,11 @@ Say: "Ik noteer uw naam en nummer alvast, dan kan ons team u terugbellen als er 
 ═══ CLOSING ═══
 Always end every response with an open question or next step to keep the conversation moving.
 Final close: "Is er verder nog iets waarmee ik u kan helpen?"
+
+═══ IMPORTANT — DO NOT REPEAT THE GREETING ═══
+The opening greeting has ALREADY been spoken automatically when the call connected.
+Do NOT start your first response with a greeting like "Goedendag" or "Hallo" again.
+When the caller speaks for the first time, reply DIRECTLY to what they said — no re-introduction.
 `.trim();
 }
 
@@ -113,10 +118,12 @@ function buildSettings() {
     agent: {
       listen: {
         provider: {
-          type:     "deepgram",
-          model:    sttModel,
+          type:        "deepgram",
+          model:       sttModel,
           // nova-3 + "multi" = auto-detects NL/EN/DE/FR (documented valid combo)
-          language: "multi",
+          language:    "multi",
+          // endpointing: ms of silence before turn ends. Default ~1000ms. 600 = 0.4s faster.
+          endpointing: 600,
         },
       },
       think: {
@@ -373,8 +380,10 @@ function register(app, { server } = {}) {
     let   streamId   = null;
     let   fromNumber = pendingCalls.get(callId) || "";
     let   sessionId  = callId || `vt_${Date.now()}`;
-    let   dgWs       = null;
-    let   keepAlive  = null;
+    let   dgWs          = null;
+    let   keepAlive     = null;
+    let   silenceTimer  = null;
+    let   silenceStrike = 0;   // 0 = no alert yet, 1 = first alert sent
 
     callHistory.set(sessionId, []);
 
@@ -382,6 +391,41 @@ function register(app, { server } = {}) {
       console.log(`[VoiceTelnyx:${sessionId}] ${msg}`);
       dbLog(sessionId, msg);
     };
+
+    // ── Silence detection — inject message if caller goes quiet ──────────────
+    function resetSilenceTimer() {
+      if (silenceTimer) clearTimeout(silenceTimer);
+      silenceStrike = 0;
+      silenceTimer  = setTimeout(onSilence, 4000);
+    }
+
+    function onSilence() {
+      if (!dgWs || dgWs.readyState !== WS.OPEN) return;
+      silenceStrike++;
+
+      if (silenceStrike === 1) {
+        // First alert — 4 s of silence
+        const msg = "Hallo? Bent u er nog? Ik kan u niet goed horen. Waarmee kan ik u helpen?";
+        log("Silence detected (4 s) — injecting first alert");
+        try { dgWs.send(JSON.stringify({ type: "InjectAgentMessage", message: msg })); } catch {}
+        // Wait 5 s more before second alert
+        silenceTimer = setTimeout(onSilence, 5000);
+      } else {
+        // Second alert — suggest alternative channels
+        const smsOn  = process.env.ENABLE_SMS       === "true";
+        const waOn   = process.env.ENABLE_WHATSAPP  === "true";
+        let alt = "";
+        if (smsOn && waOn)      alt = "via SMS of WhatsApp op +31 64 77 000 88";
+        else if (smsOn)         alt = "via SMS op +31 64 77 000 88";
+        else if (waOn)          alt = "via WhatsApp op +31 64 77 000 88";
+        else                    alt = "via e-mail op info@wagenbaas.nl";
+
+        const msg = `Bent u er nog? Ik kan u niet horen. U kunt ons ook bereiken ${alt} — dan helpen we u verder. Tot ziens!`;
+        log("Silence detected (9 s) — injecting second alert with channel suggestions");
+        try { dgWs.send(JSON.stringify({ type: "InjectAgentMessage", message: msg })); } catch {}
+        silenceTimer = null;
+      }
+    }
 
     // Flush Telnyx audio buffer — stops AI mid-sentence when caller speaks
     function flushTelnyxAudio() {
@@ -434,6 +478,8 @@ function register(app, { server } = {}) {
 
           case "SettingsApplied":
             log("Deepgram: Settings applied — agent live");
+            // Start silence watch — caller has 4 s to say something after greeting
+            resetSilenceTimer();
             break;
 
           case "ConversationText": {
@@ -445,6 +491,15 @@ function register(app, { server } = {}) {
             const history = callHistory.get(sessionId) || [];
             history.push({ role, content: msg.content });
             callHistory.set(sessionId, history);
+
+            if (role === "user") {
+              // Caller spoke — reset silence counter fully
+              resetSilenceTimer();
+            } else {
+              // Agent finished a turn — pause silence timer while AI is speaking
+              // (it will restart on AgentAudioDone)
+              if (silenceTimer) { clearTimeout(silenceTimer); silenceTimer = null; }
+            }
 
             // After each complete agent turn → try extract appointment
             if (role === "agent") {
@@ -459,6 +514,8 @@ function register(app, { server } = {}) {
             // so the caller immediately hears silence (not buffered AI speech).
             log("Caller speaking — flushing AI audio");
             flushTelnyxAudio();
+            // Reset silence timer — caller is active
+            resetSilenceTimer();
             break;
 
           case "AgentStartedSpeaking":
@@ -467,6 +524,8 @@ function register(app, { server } = {}) {
 
           case "AgentAudioDone":
             log("Agent audio done");
+            // AI finished speaking — restart silence timer, caller has 4 s to respond
+            resetSilenceTimer();
             break;
 
           case "Error":
@@ -545,6 +604,7 @@ function register(app, { server } = {}) {
 
     function cleanup() {
       clearInterval(keepAlive);
+      if (silenceTimer) clearTimeout(silenceTimer);
       try { if (dgWs) dgWs.close(); } catch {}
     }
   });
