@@ -24,6 +24,7 @@
 
 const url       = require("url");
 const WS        = require("ws");
+const axios     = require("axios");
 const Anthropic  = require("@anthropic-ai/sdk");
 const { db }    = require("../database");
 const { createAppointmentEvent, isSlotAvailable } = require("../calendar");
@@ -442,6 +443,28 @@ function register(app, { server } = {}) {
         log("Silence detected (8 s) — injecting second alert with channel suggestions");
         try { dgWs.send(JSON.stringify({ type: "InjectAgentMessage", message: msg })); } catch {}
         silenceTimer = null;
+
+        // Wait 6 s for goodbye message to finish playing, then hang up via Telnyx API
+        setTimeout(async () => {
+          log("Hanging up — caller inactive after 8 s silence");
+          const apiKey = process.env.TELNYX_API_KEY;
+          if (apiKey && callId) {
+            try {
+              await axios.post(
+                `https://api.telnyx.com/v2/calls/${callId}/actions/hangup`,
+                {},
+                { headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" } }
+              );
+              log("Hangup sent to Telnyx");
+            } catch (e) {
+              log(`Hangup API error: ${e.message} — closing WebSocket instead`);
+              try { telnyxWs.close(); } catch {}
+            }
+          } else {
+            // Fallback: close the WebSocket (Telnyx will hang up)
+            try { telnyxWs.close(); } catch {}
+          }
+        }, 6000);
       }
     }
 
