@@ -1,0 +1,529 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+  <title>AI Receptionist — Implement it</title>
+  <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700;800&family=Barlow:wght@300;400;500&display=swap" rel="stylesheet"/>
+  <style>
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    :root{
+      --bg:#0d0d0d;--bg2:#141414;--bg3:#1c1c1c;--border:#2a2a2a;
+      --orange:#ff6b1a;--text:#e8e8e8;--muted:#666;
+    }
+    html,body{min-height:100%;background:var(--bg);color:var(--text);font-family:'Barlow',sans-serif}
+
+    /* LOGIN */
+    .login-wrap{display:flex;align-items:center;justify-content:center;height:100vh}
+    .login-box{background:var(--bg2);border:1px solid var(--border);border-radius:20px;padding:40px;width:360px;text-align:center}
+    .login-box h1{font-family:'Barlow Condensed',sans-serif;font-size:28px;font-weight:800;margin-bottom:6px}
+    .login-box h1 span{color:var(--orange)}
+    .login-box p{color:var(--muted);font-size:13px;margin-bottom:28px}
+    .login-box input{width:100%;background:var(--bg3);border:1px solid var(--border);color:var(--text);font-family:'Barlow',sans-serif;font-size:14px;padding:12px 16px;border-radius:10px;outline:none;margin-bottom:14px}
+    .login-box input:focus{border-color:rgba(255,107,26,.4)}
+    .login-box button{width:100%;background:var(--orange);border:none;color:#fff;font-family:'Barlow Condensed',sans-serif;font-size:16px;font-weight:700;letter-spacing:1px;text-transform:uppercase;padding:13px;border-radius:10px;cursor:pointer;transition:background .2s}
+    .login-box button:hover{background:#ff8c42}
+    .err{color:#f87171;font-size:12px;margin-top:8px}
+
+    /* APP */
+    .app{display:none;min-height:100vh}
+
+    header{background:var(--bg2);border-bottom:1px solid var(--border);padding:0 32px;display:flex;align-items:center;gap:16px;height:60px}
+    .logo{font-family:'Barlow Condensed',sans-serif;font-size:22px;font-weight:800;text-transform:uppercase}
+    .logo span{color:var(--orange)}
+    .logo-sub{font-size:11px;color:var(--muted);letter-spacing:2px;text-transform:uppercase;margin-left:4px}
+    header .ml{margin-left:auto;display:flex;gap:8px}
+    .tab-btn{background:transparent;border:1px solid var(--border);color:var(--muted);font-family:'Barlow',sans-serif;font-size:13px;padding:7px 16px;border-radius:8px;cursor:pointer;transition:all .2s}
+    .tab-btn.active,.tab-btn:hover{border-color:var(--orange);color:var(--orange);background:rgba(255,107,26,.06)}
+
+    .content{padding:32px;max-width:1200px;margin:0 auto}
+
+    /* STATS */
+    .stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:16px;margin-bottom:32px}
+    .stat-card{background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:20px 24px}
+    .stat-card.clickable{cursor:pointer;transition:transform .12s ease,border-color .2s ease}
+    .stat-card.clickable:hover{transform:translateY(-1px);border-color:rgba(255,107,26,.55)}
+    .stat-card .val{font-family:'Barlow Condensed',sans-serif;font-size:36px;font-weight:800;color:var(--orange)}
+    .stat-card .lbl{font-size:12px;color:var(--muted);margin-top:4px;text-transform:uppercase;letter-spacing:1px}
+    .stat-card .today{font-size:11px;color:#22c55e;margin-top:4px}
+
+    /* TABLE */
+    .section{display:none}
+    .section.active{display:block}
+    .section h2{font-family:'Barlow Condensed',sans-serif;font-size:22px;font-weight:700;margin-bottom:20px}
+
+    .table-wrap{overflow-x:auto;border-radius:14px;border:1px solid var(--border)}
+    table{width:100%;border-collapse:collapse}
+    thead{background:var(--bg3)}
+    th{padding:12px 16px;text-align:left;font-size:11px;font-weight:600;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted);border-bottom:1px solid var(--border)}
+    td{padding:12px 16px;font-size:13px;border-bottom:1px solid rgba(42,42,42,.5);vertical-align:top}
+    tr:last-child td{border-bottom:none}
+    tr:hover td{background:rgba(255,255,255,.015)}
+
+    .badge{display:inline-block;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px}
+    .badge-nieuw{background:rgba(59,130,246,.15);color:#60a5fa;border:1px solid rgba(59,130,246,.2)}
+    .badge-bevestigd{background:rgba(34,197,94,.12);color:#4ade80;border:1px solid rgba(34,197,94,.2)}
+    .badge-afgerond{background:rgba(100,100,100,.15);color:#9ca3af;border:1px solid rgba(100,100,100,.2)}
+    .badge-geannuleerd{background:rgba(239,68,68,.12);color:#f87171;border:1px solid rgba(239,68,68,.2)}
+
+    select.status-sel{background:var(--bg3);border:1px solid var(--border);color:var(--text);font-family:'Barlow',sans-serif;font-size:12px;padding:4px 8px;border-radius:6px;cursor:pointer;outline:none}
+    select.status-sel:focus{border-color:var(--orange)}
+
+    .empty{text-align:center;padding:48px;color:var(--muted);font-size:14px}
+    .empty-icon{font-size:36px;margin-bottom:12px}
+
+    .refresh-btn{background:transparent;border:1px solid var(--border);color:var(--muted);font-family:'Barlow',sans-serif;font-size:12px;padding:6px 14px;border-radius:8px;cursor:pointer;margin-left:12px;transition:all .2s}
+    .refresh-btn:hover{border-color:#444;color:var(--text)}
+
+    .last-updated{font-size:11px;color:var(--muted);margin-bottom:20px}
+  </style>
+</head>
+<body>
+
+<!-- LOGIN -->
+<div class="login-wrap" id="loginWrap">
+  <div class="login-box">
+    <h1>AI Receptionist</h1>
+    <p>Admin Dashboard — voer uw token in</p>
+    <input type="password" id="tokenInput" placeholder="Admin token" onkeydown="if(event.key==='Enter')login()"/>
+    <button onclick="login()">Inloggen</button>
+    <div class="err" id="loginErr"></div>
+  </div>
+</div>
+
+<!-- APP -->
+<div class="app" id="app">
+  <header>
+    <div>
+      <span class="logo">AI Receptionist</span>
+      <span class="logo-sub">Implement it</span>
+    </div>
+    <div class="ml">
+      <button class="tab-btn active" onclick="showTab('dashboard',this)">📊 Dashboard</button>
+      <button class="tab-btn" onclick="showTab('appointments',this)">📅 Afspraken</button>
+      <button class="tab-btn" onclick="showTab('callbacks',this)">📞 Terugbellen</button>
+      <button class="tab-btn" onclick="showTab('missed',this)" id="missedTab">📵 Missed Calls</button>
+      <button class="tab-btn" onclick="showTab('emails',this)">📧 E-mails</button>
+      <button class="tab-btn" onclick="showTab('leads',this)">👥 Leads</button>
+    </div>
+  </header>
+
+  <div class="content">
+    <div class="last-updated" id="lastUpdated"></div>
+
+    <!-- DASHBOARD -->
+    <div class="section active" id="sec-dashboard">
+      <div class="stats-grid" id="statsGrid"></div>
+      <h3 style="font-family:'Barlow Condensed',sans-serif;font-size:13px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--orange);margin:24px 0 12px">📡 Berichten per Kanaal</h3>
+      <div class="stats-grid" id="channelGrid"></div>
+      <h3 style="font-family:'Barlow Condensed',sans-serif;font-size:13px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--orange);margin:24px 0 12px">🕐 Recente Afspraken</h3>
+      <div class="table-wrap" id="recentWrap"></div>
+    </div>
+
+    <!-- APPOINTMENTS -->
+    <div class="section" id="sec-appointments">
+      <h2>📅 Afspraken <button class="refresh-btn" onclick="loadData()">↻ Vernieuwen</button></h2>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>#</th><th>Naam</th><th>Contact</th><th>Auto</th>
+              <th>Dienst</th><th>Datum/Tijd</th><th>Status</th><th>Aangemaakt</th>
+            </tr>
+          </thead>
+          <tbody id="appointmentsTbody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- CALLBACKS -->
+    <div class="section" id="sec-callbacks">
+      <h2>📞 Terugbellen <button class="refresh-btn" onclick="loadData()">↻ Vernieuwen</button></h2>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>#</th><th>Naam</th><th>Telefoon</th><th>Reden</th><th>Status</th><th>Kanaal</th><th>Aangemaakt</th></tr>
+          </thead>
+          <tbody id="callbacksTbody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- MISSED CALLS -->
+    <div class="section" id="sec-missed">
+      <h2>📵 Missed Calls <button class="refresh-btn" onclick="loadData()">↻ Refresh</button></h2>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>#</th><th>Caller</th><th>Time</th><th>Status</th></tr>
+          </thead>
+          <tbody id="missedTbody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- EMAILS -->
+    <div class="section" id="sec-emails">
+      <h2>📧 E-mails <button class="refresh-btn" onclick="loadData()">↻ Vernieuwen</button></h2>
+      <div id="emailWarning" style="display:none;background:rgba(255,107,26,.1);border:1px solid rgba(255,107,26,.3);border-radius:10px;padding:12px 16px;margin-bottom:16px;font-size:13px;color:var(--orange)">
+        ⚠️ E-mail niet geconfigureerd — voeg Mailgun gegevens toe aan .env om automatisch te antwoorden.
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>#</th><th>Van</th><th>Onderwerp</th><th>AI Antwoord</th><th>Status</th><th>Ontvangen</th></tr></thead>
+          <tbody id="emailsTbody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- LEADS -->
+    <div class="section" id="sec-leads">
+      <h2>👥 Leads <button class="refresh-btn" onclick="loadData()">↻ Vernieuwen</button></h2>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>#</th><th>Naam</th><th>Telefoon</th><th>E-mail</th><th>Notities</th><th>Aangemaakt</th></tr>
+          </thead>
+          <tbody id="leadsTbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  let adminToken = '';
+  let data = {};
+
+  function login() {
+    const token = document.getElementById('tokenInput').value.trim();
+    if (!token) return;
+    adminToken = token;
+    loadData().then(() => {
+      document.getElementById('loginWrap').style.display = 'none';
+      document.getElementById('app').style.display = 'block';
+    }).catch(() => {
+      document.getElementById('loginErr').textContent = 'Ongeldig token. Probeer opnieuw.';
+      adminToken = '';
+    });
+  }
+
+  async function loadData() {
+    const res = await fetch('/api/admin/dashboard', {
+      headers: { 'x-admin-token': adminToken }
+    });
+    if (!res.ok) throw new Error('Unauthorized');
+    data = await res.json();
+    document.getElementById('lastUpdated').textContent =
+      'Bijgewerkt: ' + new Date().toLocaleTimeString('nl-NL');
+    renderAll();
+  }
+
+  function renderAll() {
+    renderStats();
+    renderAppointments();
+    renderCallbacks();
+    renderMissedCalls();
+    renderEmails();
+    renderLeads();
+  }
+
+  function renderStats() {
+    const statsMap = {};
+    (data.stats || []).forEach(s => statsMap[s.event] = s.count);
+    const todayMap = {};
+    (data.todayStats || []).forEach(s => todayMap[s.event] = s.count);
+    const pendingCB = (data.callbacks || []).filter(c => c.status === 'te bellen').length;
+    const newEmails = (data.emails || []).filter(e => e.status === 'nieuw').length;
+    const newMissed = (data.missedCalls || []).filter(c => c.status === 'gemist').length;
+
+    const cards = [
+      { icon:'💬', label:'Berichten totaal', key:'message_sent' },
+      { icon:'📅', label:'Afspraken totaal', key:'appointment_booked', tab:'appointments' },
+      { icon:'📞', label:'Terugbellen', val: pendingCB, alert: pendingCB > 0, tab:'callbacks' },
+      { icon:'📵', label:'Missed Calls', val: newMissed, alert: newMissed > 0, tab:'missed' },
+      { icon:'📧', label:'Nieuwe e-mails', val: newEmails, alert: newEmails > 0, tab:'emails' },
+      { icon:'👥', label:'Leads totaal', key:'lead_captured', tab:'leads' },
+    ];
+
+    document.getElementById('statsGrid').innerHTML = cards.map(c => {
+      const val = c.val !== undefined ? c.val : (statsMap[c.key] || 0);
+      const td = c.key ? (todayMap[c.key] || 0) : null;
+      const clickable = !!c.tab;
+      const clickAttrs = clickable ? `onclick="goTab('${c.tab}')"` : '';
+      const cls = `stat-card${clickable ? ' clickable' : ''}`;
+      return `<div class="${cls}" ${clickAttrs} ${c.alert && val > 0 ? 'style="border-color:rgba(255,107,26,.5)"' : ''}>
+        <div class="val" ${c.alert && val > 0 ? 'style="color:var(--orange)"' : ''}>${val}</div>
+        <div class="lbl">${c.icon} ${c.label}</div>
+        ${td !== null ? `<div class="today">+${td} vandaag</div>` : ''}
+        ${c.alert && val > 0 ? `<div class="today" style="color:var(--orange)">⚠️ Actie vereist!</div>` : ''}
+      </div>`;
+    }).join('');
+
+    // Channel breakdown
+    const chIcons = { webchat:'💬', sms:'📱', email:'📧', whatsapp:'📱', facebook:'📘', instagram:'📸', voice:'📞', tiktok:'🎵' };
+    const chStats = data.channelStats || [];
+    const cgEl = document.getElementById('channelGrid');
+    if (cgEl) {
+      if (!chStats.length) {
+        cgEl.innerHTML = '<div style="color:var(--muted);font-size:13px">Nog geen berichten ontvangen.</div>';
+      } else {
+        cgEl.innerHTML = chStats.map(c => `
+          <div class="stat-card">
+            <div class="val">${c.count}</div>
+            <div class="lbl">${chIcons[c.channel]||'💬'} ${c.channel}</div>
+          </div>`).join('');
+      }
+    }
+
+    // Recent appointments
+    const recent = (data.appointments||[]).slice(0,5);
+    const rw = document.getElementById('recentWrap');
+    if (rw) {
+      if (!recent.length) {
+        rw.innerHTML = '<div style="color:var(--muted);font-size:13px;padding:12px 0">Nog geen afspraken.</div>';
+      } else {
+        rw.innerHTML = `<table style="width:100%;border-collapse:collapse">
+          <thead><tr>
+            <th style="padding:10px 14px;text-align:left;font-size:11px;letter-spacing:1px;text-transform:uppercase;color:var(--muted);border-bottom:1px solid var(--border)">Naam</th>
+            <th style="padding:10px 14px;text-align:left;font-size:11px;letter-spacing:1px;text-transform:uppercase;color:var(--muted);border-bottom:1px solid var(--border)">Dienst</th>
+            <th style="padding:10px 14px;text-align:left;font-size:11px;letter-spacing:1px;text-transform:uppercase;color:var(--muted);border-bottom:1px solid var(--border)">Datum</th>
+            <th style="padding:10px 14px;text-align:left;font-size:11px;letter-spacing:1px;text-transform:uppercase;color:var(--muted);border-bottom:1px solid var(--border)">Kanaal</th>
+            <th style="padding:10px 14px;text-align:left;font-size:11px;letter-spacing:1px;text-transform:uppercase;color:var(--muted);border-bottom:1px solid var(--border)">Status</th>
+          </tr></thead>
+          <tbody>${recent.map(a=>`<tr onclick="goTab('appointments')" style="cursor:pointer">
+            <td style="padding:10px 14px;font-size:13px;border-bottom:1px solid rgba(42,42,42,.4)"><strong>${esc(a.name||'—')}</strong></td>
+            <td style="padding:10px 14px;font-size:12px;border-bottom:1px solid rgba(42,42,42,.4)">${esc(a.service||'—')}</td>
+            <td style="padding:10px 14px;font-size:12px;color:var(--muted);border-bottom:1px solid rgba(42,42,42,.4)">${esc(a.pref_date||'—')}</td>
+            <td style="padding:10px 14px;border-bottom:1px solid rgba(42,42,42,.4)">${channelIcon(a.channel||'webchat')}</td>
+            <td style="padding:10px 14px;border-bottom:1px solid rgba(42,42,42,.4)"><span class="badge badge-${a.status}">${a.status}</span></td>
+          </tr>`).join('')}</tbody>
+        </table>`;
+      }
+    }
+  }
+
+  function renderEmails() {
+    const tbody = document.getElementById('emailsTbody');
+    if (!tbody) return;
+    if (!data.emailConfigured) {
+      const w = document.getElementById('emailWarning');
+      if (w) w.style.display = 'block';
+    }
+    const rows = data.emails || [];
+    if (!rows.length) {
+      tbody.innerHTML = '<tr><td colspan="6"><div class="empty"><div class="empty-icon">📭</div>Nog geen e-mails ontvangen</div></td></tr>';
+      return;
+    }
+    tbody.innerHTML = rows.map(e => `
+      <tr>
+        <td style="color:var(--muted)">#${e.id}</td>
+        <td style="font-size:12px">
+          <strong>${esc(e.from_name||'—')}</strong><br>
+          <a href="mailto:${esc(e.from_email)}" style="color:var(--orange);text-decoration:none">${esc(e.from_email)}</a>
+        </td>
+        <td style="font-size:13px">${esc(e.subject)}</td>
+        <td style="font-size:12px;color:var(--muted);max-width:260px">
+          <div style="max-height:60px;overflow:hidden">${esc((e.ai_reply||'').substring(0,120))}...</div>
+          <button onclick="showEmailDetail(${e.id})" style="background:transparent;border:1px solid var(--border);color:var(--orange);font-size:11px;padding:3px 8px;border-radius:6px;cursor:pointer;margin-top:4px">Bekijk volledig</button>
+        </td>
+        <td>
+          <select class="status-sel" onchange="updateEmailStatus(${e.id}, this.value)">
+            ${['nieuw','gelezen','afgerond'].map(s=>`<option value="${s}" ${e.status===s?'selected':''}>${s}</option>`).join('')}
+          </select>
+          <span class="badge badge-${e.status==='nieuw'?'nieuw':e.status==='gelezen'?'bevestigd':'afgerond'}" style="margin-left:6px">${e.status}</span>
+        </td>
+        <td style="font-size:11px;color:var(--muted)">${fmtDate(e.created_at)}</td>
+      </tr>`).join('');
+  }
+
+  function showEmailDetail(id) {
+    const email = (data.emails||[]).find(e=>e.id===id);
+    if (!email) return;
+    alert(`Van: ${email.from_name} <${email.from_email}>\nOnderwerp: ${email.subject}\n\nBericht:\n${email.body}\n\n--- AI Antwoord ---\n${email.ai_reply}`);
+  }
+
+  async function updateEmailStatus(id, status) {
+    await fetch(`/api/admin/emails/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', 'x-admin-token': adminToken },
+      body: JSON.stringify({ status })
+    });
+    await loadData();
+  }
+
+  function renderMissedCalls() {
+    const tbody = document.getElementById('missedTbody');
+    if (!tbody) return;
+    const rows = data.missedCalls || [];
+    const newCount = rows.filter(c => c.status === 'gemist').length;
+    const tab = document.getElementById('missedTab');
+    if (tab) tab.textContent = `📵 Missed Calls${newCount > 0 ? ' (' + newCount + ')' : ''}`;
+    if (!rows.length) {
+      tbody.innerHTML = '<tr><td colspan="4"><div class="empty"><div class="empty-icon">📵</div>No missed calls</div></td></tr>';
+      return;
+    }
+    tbody.innerHTML = rows.map(c => `
+      <tr>
+        <td style="color:var(--muted)">#${c.id}</td>
+        <td><a href="tel:${esc(c.caller)}" style="color:var(--orange);text-decoration:none;font-weight:600">📞 ${esc(c.caller || 'Onbekend')}</a></td>
+        <td style="font-size:11px;color:var(--muted)">${fmtDate(c.created_at)}</td>
+        <td>
+          <select class="status-sel" onchange="updateMissedStatus(${c.id}, this.value)">
+            ${[['gemist','Missed'],['teruggebeld','Called Back'],['afgerond','Done']].map(([v,l]) => `<option value="${v}" ${c.status===v?'selected':''}>${l}</option>`).join('')}
+          </select>
+          <span class="badge badge-${c.status==='gemist'?'nieuw':c.status==='teruggebeld'?'bevestigd':'afgerond'}" style="margin-left:6px">${c.status}</span>
+        </td>
+      </tr>`).join('');
+  }
+
+  async function updateMissedStatus(id, status) {
+    await fetch(`/api/admin/missed-calls/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', 'x-admin-token': adminToken },
+      body: JSON.stringify({ status })
+    });
+    await loadData();
+  }
+
+  function renderCallbacks() {
+    const tbody = document.getElementById('callbacksTbody');
+    if (!tbody) return;
+    const rows = data.callbacks || [];
+    if (!rows.length) {
+      tbody.innerHTML = '<tr><td colspan="6"><div class="empty"><div class="empty-icon">📭</div>Geen terugbel verzoeken</div></td></tr>';
+      return;
+    }
+    tbody.innerHTML = rows.map(c => `
+      <tr>
+        <td style="color:var(--muted)">#${c.id}</td>
+        <td><strong>${esc(c.name || '—')}</strong></td>
+        <td><a href="tel:${esc(c.phone)}" style="color:var(--orange);text-decoration:none;font-weight:600">📞 ${esc(c.phone)}</a></td>
+        <td style="font-size:12px;color:var(--muted)">${esc(c.reason || '—')}</td>
+        <td>
+          <select class="status-sel" onchange="updateCallbackStatus(${c.id}, this.value)">
+            ${['te bellen','gebeld','afgerond'].map(s => `<option value="${s}" ${c.status===s?'selected':''}>${s}</option>`).join('')}
+          </select>
+          <span class="badge badge-${c.status==='te bellen'?'nieuw':c.status==='gebeld'?'bevestigd':'afgerond'}" style="margin-left:6px">${c.status}</span>
+        </td>
+        <td>${channelIcon(c.channel||'webchat')}</td>
+        <td style="font-size:11px;color:var(--muted)">${fmtDate(c.created_at)}</td>
+      </tr>`).join('');
+  }
+
+  function renderAppointments() {
+    const tbody = document.getElementById('appointmentsTbody');
+    const rows = data.appointments || [];
+    if (!rows.length) {
+      tbody.innerHTML = '<tr><td colspan="8"><div class="empty"><div class="empty-icon">📭</div>Nog geen afspraken</div></td></tr>';
+      return;
+    }
+    tbody.innerHTML = rows.map(a => `
+      <tr>
+        <td style="color:var(--muted)">#${a.id}</td>
+        <td><strong>${esc(a.name)}</strong></td>
+        <td style="font-size:12px">
+          ${a.phone ? `📞 ${esc(a.phone)}<br>` : ''}
+          ${a.email ? `✉️ ${esc(a.email)}` : ''}
+        </td>
+        <td style="font-size:12px">
+          ${esc(a.car_brand)} ${esc(a.car_model)}<br>
+          <span style="color:var(--muted)">${esc(a.car_year)} ${a.license ? '· ' + esc(a.license) : ''}</span>
+        </td>
+        <td>${esc(a.service)}</td>
+        <td style="font-size:12px">${esc(a.pref_date)}<br><span style="color:var(--muted)">${esc(a.pref_time)}</span></td>
+        <td>
+          <select class="status-sel" onchange="updateStatus(${a.id}, this.value)">
+            ${['nieuw','bevestigd','afgerond','geannuleerd'].map(s =>
+              `<option value="${s}" ${a.status===s?'selected':''}>${s}</option>`
+            ).join('')}
+          </select>
+          <span class="badge badge-${a.status}" style="margin-left:6px">${a.status}</span>
+        </td>
+        <td style="font-size:11px;color:var(--muted)">${fmtDate(a.created_at)}</td>
+      </tr>`).join('');
+  }
+
+  function renderLeads() {
+    const tbody = document.getElementById('leadsTbody');
+    const rows = data.leads || [];
+    if (!rows.length) {
+      tbody.innerHTML = '<tr><td colspan="6"><div class="empty"><div class="empty-icon">📭</div>Nog geen leads</div></td></tr>';
+      return;
+    }
+    tbody.innerHTML = rows.map(l => `
+      <tr>
+        <td style="color:var(--muted)">#${l.id}</td>
+        <td><strong>${esc(l.name || '—')}</strong></td>
+        <td>${l.phone ? `<a href="tel:${esc(l.phone)}" style="color:var(--orange);text-decoration:none">${esc(l.phone)}</a>` : '—'}</td>
+        <td>${l.email ? `<a href="mailto:${esc(l.email)}" style="color:var(--orange);text-decoration:none">${esc(l.email)}</a>` : '—'}</td>
+        <td style="font-size:12px;color:var(--muted)">${esc(l.notes || '—')}</td>
+        <td style="font-size:11px;color:var(--muted)">${fmtDate(l.created_at)}</td>
+      </tr>`).join('');
+  }
+
+  async function updateStatus(id, status) {
+    await fetch(`/api/admin/appointments/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', 'x-admin-token': adminToken },
+      body: JSON.stringify({ status })
+    });
+    await loadData();
+  }
+
+  async function updateCallbackStatus(id, status) {
+    await fetch(`/api/admin/callbacks/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', 'x-admin-token': adminToken },
+      body: JSON.stringify({ status })
+    });
+    await loadData();
+  }
+
+  function showTab(name, btn) {
+    document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.getElementById('sec-' + name).classList.add('active');
+    if (btn) btn.classList.add('active');
+    try { location.hash = name; } catch {}
+  }
+
+  function goTab(name) {
+    const btn = Array.from(document.querySelectorAll('.tab-btn')).find(b => {
+      const t = (b.getAttribute('onclick') || '').match(/showTab\('([^']+)'/);
+      return t && t[1] === name;
+    });
+    showTab(name, btn || null);
+  }
+
+  function initHashRouting() {
+    const hash = (location.hash || '').replace('#','').trim();
+    if (hash && document.getElementById('sec-' + hash)) goTab(hash);
+    window.addEventListener('hashchange', () => {
+      const h = (location.hash || '').replace('#','').trim();
+      if (h && document.getElementById('sec-' + h)) goTab(h);
+    });
+  }
+
+  function esc(s) {
+    if (!s) return '';
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
+  function fmtDate(d) {
+    if (!d) return '—';
+    return new Date(d).toLocaleString('nl-NL', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit' });
+  }
+
+  function channelIcon(ch) {
+    const icons = { webchat:'💬', sms:'📱', email:'📧', whatsapp:'📱', facebook:'📘', instagram:'📸', voice:'📞', tiktok:'🎵' };
+    return `<span style="font-size:13px" title="${ch}">${icons[ch]||'💬'} <span style="font-size:11px;color:var(--muted)">${ch}</span></span>`;
+  }
+
+  // Auto-refresh every 60s
+  setInterval(() => { if (adminToken) loadData(); }, 60000);
+
+  initHashRouting();
+</script>
+</body>
+</html>

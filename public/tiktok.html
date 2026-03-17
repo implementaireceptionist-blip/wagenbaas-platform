@@ -1,0 +1,712 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0"/>
+  <title>Book an Appointment — Wagenbaas</title>
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet"/>
+  <style>
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+
+    :root{
+      --bg:#0a0a0a;
+      --card:#141414;
+      --border:#222;
+      --orange:#ff5c00;
+      --orange2:#ff8040;
+      --text:#f0f0f0;
+      --muted:#666;
+      --green:#22c55e;
+    }
+
+    html,body{
+      min-height:100%;
+      background:var(--bg);
+      color:var(--text);
+      font-family:'DM Sans',sans-serif;
+      font-weight:400;
+      overflow-x:hidden;
+    }
+
+    /* ── BACKGROUND ── */
+    .bg-glow{
+      position:fixed;top:-200px;left:50%;transform:translateX(-50%);
+      width:600px;height:600px;
+      background:radial-gradient(circle, rgba(255,92,0,.12) 0%, transparent 70%);
+      pointer-events:none;z-index:0;
+    }
+
+    /* ── HEADER ── */
+    .header{
+      position:relative;z-index:10;
+      padding:28px 24px 0;
+      text-align:center;
+    }
+
+    .brand{
+      font-family:'Syne',sans-serif;
+      font-size:13px;font-weight:700;
+      letter-spacing:3px;text-transform:uppercase;
+      color:var(--muted);margin-bottom:20px;
+    }
+
+    .hero-badge{
+      display:inline-flex;align-items:center;gap:6px;
+      background:rgba(255,92,0,.1);border:1px solid rgba(255,92,0,.25);
+      border-radius:100px;padding:6px 14px;
+      font-size:11px;font-weight:500;color:var(--orange);
+      letter-spacing:1px;text-transform:uppercase;
+      margin-bottom:16px;
+    }
+
+    .hero-badge .dot{
+      width:6px;height:6px;border-radius:50%;
+      background:var(--orange);
+      animation:pulse 2s infinite;
+    }
+
+    @keyframes pulse{
+      0%,100%{box-shadow:0 0 0 0 rgba(255,92,0,.4)}
+      50%{box-shadow:0 0 0 6px rgba(255,92,0,0)}
+    }
+
+    .hero-title{
+      font-family:'Syne',sans-serif;
+      font-size:36px;font-weight:800;
+      line-height:1.1;
+      margin-bottom:10px;
+    }
+
+    .hero-title span{color:var(--orange)}
+
+    .hero-sub{
+      font-size:14px;color:var(--muted);
+      line-height:1.6;max-width:300px;margin:0 auto 28px;
+    }
+
+    /* ── QUICK BOOK BUTTONS ── */
+    .quick-section{
+      position:relative;z-index:10;
+      padding:0 20px 24px;
+    }
+
+    .quick-label{
+      font-size:11px;font-weight:500;letter-spacing:2px;
+      text-transform:uppercase;color:var(--muted);
+      margin-bottom:12px;text-align:center;
+    }
+
+    .quick-grid{
+      display:grid;grid-template-columns:1fr 1fr;
+      gap:10px;margin-bottom:10px;
+    }
+
+    .quick-card{
+      background:var(--card);
+      border:1px solid var(--border);
+      border-radius:16px;
+      padding:16px 14px;
+      cursor:pointer;
+      transition:all .2s;
+      text-align:left;
+      -webkit-tap-highlight-color:transparent;
+    }
+
+    .quick-card:active{transform:scale(.97);background:#1a1a1a}
+
+    .quick-card:hover{
+      border-color:rgba(255,92,0,.3);
+      background:#181818;
+    }
+
+    .quick-card .qc-icon{font-size:22px;margin-bottom:8px}
+    .quick-card .qc-title{font-size:13px;font-weight:500;line-height:1.3}
+    .quick-card .qc-sub{font-size:11px;color:var(--muted);margin-top:3px}
+
+    .quick-card.featured{
+      grid-column:1/-1;
+      background:linear-gradient(135deg, rgba(255,92,0,.15), rgba(255,92,0,.05));
+      border-color:rgba(255,92,0,.3);
+      display:flex;align-items:center;gap:14px;
+    }
+
+    .quick-card.featured .qc-title{font-size:15px;font-weight:600}
+
+    /* ── CHAT CONTAINER ── */
+    .chat-wrap{
+      position:relative;z-index:10;
+      margin:0 16px;
+      background:var(--card);
+      border:1px solid var(--border);
+      border-radius:24px;
+      overflow:hidden;
+      display:flex;flex-direction:column;
+      height:460px;
+      box-shadow:0 20px 60px rgba(0,0,0,.5);
+    }
+
+    .chat-top{
+      padding:14px 18px;
+      border-bottom:1px solid var(--border);
+      display:flex;align-items:center;gap:10px;
+      background:#111;
+    }
+
+    .chat-avatar{
+      width:36px;height:36px;
+      background:linear-gradient(135deg,var(--orange),#cc3300);
+      border-radius:50%;
+      display:flex;align-items:center;justify-content:center;
+      font-size:16px;flex-shrink:0;
+    }
+
+    .chat-info h3{
+      font-family:'Syne',sans-serif;
+      font-size:14px;font-weight:700;
+    }
+
+    .chat-info p{
+      font-size:11px;color:var(--muted);margin-top:1px;
+      display:flex;align-items:center;gap:4px;
+    }
+
+    .online-dot{
+      width:6px;height:6px;border-radius:50%;
+      background:var(--green);
+      animation:pulse-green 2s infinite;
+    }
+
+    @keyframes pulse-green{
+      0%,100%{box-shadow:0 0 0 0 rgba(34,197,94,.4)}
+      50%{box-shadow:0 0 0 4px rgba(34,197,94,0)}
+    }
+
+    .messages{
+      flex:1;overflow-y:auto;
+      padding:16px;
+      display:flex;flex-direction:column;
+      gap:10px;
+      scroll-behavior:smooth;
+    }
+
+    .messages::-webkit-scrollbar{width:3px}
+    .messages::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
+
+    .msg{display:flex;gap:8px;max-width:88%;animation:fadeUp .25s ease}
+
+    @keyframes fadeUp{
+      from{opacity:0;transform:translateY(8px)}
+      to{opacity:1;transform:translateY(0)}
+    }
+
+    .msg.user{flex-direction:row-reverse;align-self:flex-end}
+
+    .msg-avatar{
+      width:26px;height:26px;border-radius:50%;
+      display:flex;align-items:center;justify-content:center;
+      font-size:12px;flex-shrink:0;margin-top:2px;
+    }
+
+    .msg.bot .msg-avatar{background:linear-gradient(135deg,var(--orange),#cc3300)}
+    .msg.user .msg-avatar{background:#222;border:1px solid var(--border)}
+
+    .msg-bubble{
+      padding:10px 13px;
+      border-radius:14px;
+      font-size:13px;line-height:1.55;
+      white-space:pre-wrap;
+    }
+
+    .msg.bot .msg-bubble{
+      background:#1a1a1a;border:1px solid var(--border);
+      border-top-left-radius:4px;
+    }
+
+    .msg.user .msg-bubble{
+      background:linear-gradient(135deg,rgba(255,92,0,.2),rgba(255,92,0,.1));
+      border:1px solid rgba(255,92,0,.2);
+      border-top-right-radius:4px;
+    }
+
+    /* typing */
+    .typing-bubble{display:flex;align-items:center;gap:4px;padding:12px 14px}
+    .typing-dot{width:5px;height:5px;background:var(--orange);border-radius:50%;animation:bounce 1.2s infinite}
+    .typing-dot:nth-child(2){animation-delay:.2s}
+    .typing-dot:nth-child(3){animation-delay:.4s}
+    @keyframes bounce{0%,60%,100%{transform:translateY(0);opacity:.4}30%{transform:translateY(-5px);opacity:1}}
+
+    /* ── INPUT ── */
+    .input-area{
+      padding:10px 12px 12px;
+      border-top:1px solid var(--border);
+      background:#111;
+    }
+
+    .input-row{
+      display:flex;gap:8px;align-items:flex-end;
+      background:#1a1a1a;
+      border:1px solid var(--border);
+      border-radius:12px;
+      padding:8px 8px 8px 12px;
+      transition:border-color .2s;
+    }
+
+    .input-row:focus-within{border-color:rgba(255,92,0,.35)}
+
+    #chatInput{
+      flex:1;background:transparent;border:none;outline:none;
+      color:var(--text);font-family:'DM Sans',sans-serif;
+      font-size:13px;resize:none;max-height:100px;
+      line-height:1.5;padding-top:2px;
+    }
+
+    #chatInput::placeholder{color:var(--muted)}
+
+    .send-btn{
+      width:34px;height:34px;
+      background:var(--orange);border:none;
+      border-radius:9px;cursor:pointer;
+      display:flex;align-items:center;justify-content:center;
+      flex-shrink:0;transition:background .2s,transform .1s;
+    }
+
+    .send-btn:active{transform:scale(.93)}
+    .send-btn:disabled{background:#333;cursor:not-allowed}
+    .send-btn svg{fill:white}
+
+    .mic-btn{
+      width:34px;height:34px;
+      background:#1e1e1e;border:1px solid var(--border);
+      border-radius:9px;cursor:pointer;
+      display:flex;align-items:center;justify-content:center;
+      flex-shrink:0;transition:all .2s;
+    }
+    .mic-btn:hover{border-color:rgba(255,92,0,.4)}
+    .mic-btn.active{background:rgba(220,30,30,.15);border-color:rgba(220,30,30,.5);animation:mic-pulse 1.5s infinite}
+    .mic-btn svg{fill:#666;transition:fill .2s}
+    .mic-btn.active svg{fill:#e03030}
+    @keyframes mic-pulse{0%,100%{box-shadow:0 0 0 0 rgba(220,30,30,.3)}50%{box-shadow:0 0 0 5px rgba(220,30,30,0)}}
+
+    /* ── CALL OVERLAY (TikTok) ── */
+    .call-overlay{
+      display:none;position:fixed;inset:0;
+      background:rgba(0,0,0,.9);z-index:2000;
+      align-items:center;justify-content:center;
+      backdrop-filter:blur(10px);
+    }
+    .call-overlay.show{display:flex}
+    .call-card{
+      background:#141414;border:1px solid #222;
+      border-radius:28px;padding:40px 32px 32px;
+      text-align:center;width:280px;
+    }
+    .call-av-wrap{position:relative;width:80px;height:80px;margin:0 auto 16px}
+    .call-ring{
+      position:absolute;border-radius:50%;
+      border:2px solid rgba(255,92,0,.3);
+      animation:ring-out 2s infinite;
+    }
+    .call-ring:nth-child(1){inset:-8px;animation-delay:0s}
+    .call-ring:nth-child(2){inset:-16px;animation-delay:.5s;border-color:rgba(255,92,0,.15)}
+    @keyframes ring-out{0%{transform:scale(.9);opacity:1}100%{transform:scale(1.1);opacity:0}}
+    .call-av{position:relative;z-index:1;width:80px;height:80px;background:linear-gradient(135deg,var(--orange),#cc3300);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:32px}
+    .call-name{font-family:'Syne',sans-serif;font-size:20px;font-weight:700;margin-bottom:4px}
+    .call-sub{font-size:11px;color:var(--muted);margin-bottom:12px}
+    .call-status-text{font-size:12px;color:var(--orange);margin-bottom:4px;min-height:18px}
+    .call-timer{font-family:'Syne',sans-serif;font-size:32px;font-weight:700;margin:6px 0 16px}
+    .waveform{display:flex;align-items:center;justify-content:center;gap:4px;height:28px;margin-bottom:24px}
+    .waveform span{display:block;width:3px;border-radius:2px;background:var(--orange);height:5px}
+    .waveform.listening span{animation:wv 1s infinite}
+    .waveform.listening span:nth-child(2){animation-delay:.1s}
+    .waveform.listening span:nth-child(3){animation-delay:.2s}
+    .waveform.listening span:nth-child(4){animation-delay:.3s}
+    .waveform.listening span:nth-child(5){animation-delay:.4s}
+    @keyframes wv{0%,100%{height:5px}50%{height:22px}}
+    .waveform.speaking span{animation:wv-s .5s infinite alternate}
+    .waveform.speaking span:nth-child(odd){animation-delay:.12s}
+    @keyframes wv-s{0%{height:3px}100%{height:26px}}
+    .call-end-btn{width:56px;height:56px;background:#e03030;border:none;border-radius:50%;font-size:22px;cursor:pointer;display:flex;align-items:center;justify-content:center;margin:0 auto;box-shadow:0 4px 16px rgba(220,48,48,.4);transition:background .2s}
+    .call-end-btn:hover{background:#c02020}
+
+    /* Call CTA button */
+    .call-cta{
+      display:flex;align-items:center;justify-content:center;gap:8px;
+      background:linear-gradient(135deg,var(--orange),#cc3300);
+      border:none;color:#fff;font-family:'DM Sans',sans-serif;
+      font-size:14px;font-weight:600;padding:14px 24px;
+      border-radius:14px;cursor:pointer;width:calc(100% - 32px);
+      margin:0 16px 20px;box-shadow:0 4px 20px rgba(255,92,0,.3);
+      transition:opacity .2s;
+    }
+    .call-cta:hover{opacity:.9}
+    .call-cta.on-call{background:linear-gradient(135deg,#e03030,#a01010)}
+
+    /* ── CONFIRMATION ── */
+    .confirm-banner{
+      display:none;
+      margin:12px 16px 0;
+      background:rgba(34,197,94,.1);
+      border:1px solid rgba(34,197,94,.25);
+      border-radius:14px;
+      padding:14px 16px;
+      font-size:13px;
+      color:var(--green);
+      text-align:center;
+      animation:fadeUp .3s ease;
+    }
+
+    /* ── FOOTER ── */
+    .footer{
+      position:relative;z-index:10;
+      padding:20px 24px 32px;
+      text-align:center;
+    }
+
+    .footer-links{
+      display:flex;align-items:center;justify-content:center;
+      gap:16px;margin-bottom:10px;
+    }
+
+    .footer-links a{
+      font-size:12px;color:var(--muted);text-decoration:none;
+      transition:color .2s;
+    }
+
+    .footer-links a:hover{color:var(--orange)}
+
+    .footer-copy{font-size:11px;color:#333}
+
+    /* ── TOAST ── */
+    .toast{
+      position:fixed;bottom:80px;left:50%;transform:translateX(-50%);
+      background:var(--green);color:#fff;
+      padding:10px 20px;border-radius:100px;
+      font-size:13px;font-weight:500;
+      z-index:999;white-space:nowrap;
+      animation:fadeUp .3s ease;
+    }
+  </style>
+</head>
+<body>
+
+<div class="bg-glow"></div>
+
+<!-- HEADER -->
+<div class="header">
+  <div class="brand">Wagenbaas · Apeldoorn</div>
+  <div class="hero-badge"><div class="dot"></div> Book Now</div>
+  <h1 class="hero-title">Book Your<br><span>Appointment</span></h1>
+  <p class="hero-sub">MOT, maintenance or repair — book online in seconds. Our AI assistant will help you right away.</p>
+</div>
+
+<!-- QUICK BUTTONS -->
+<div class="quick-section">
+  <div class="quick-label">Choose a service</div>
+  <div class="quick-grid">
+    <div class="quick-card featured" onclick="quickBook('I want to book an MOT inspection')">
+      <div class="qc-icon">🔍</div>
+      <div>
+        <div class="qc-title">MOT Inspection</div>
+        <div class="qc-sub">Legally required · Sorted fast</div>
+      </div>
+    </div>
+    <div class="quick-card" onclick="quickBook('I want to book a maintenance appointment')">
+      <div class="qc-icon">🔧</div>
+      <div class="qc-title">Maintenance</div>
+      <div class="qc-sub">Oil, brakes, filters</div>
+    </div>
+    <div class="quick-card" onclick="quickBook('My car needs a repair')">
+      <div class="qc-icon">⚙️</div>
+      <div class="qc-title">Repair</div>
+      <div class="qc-sub">Diagnosis & fix</div>
+    </div>
+    <div class="quick-card" onclick="quickBook('I want my tyres changed')">
+      <div class="qc-icon">🚗</div>
+      <div class="qc-title">Tyres</div>
+      <div class="qc-sub">Swap & balance</div>
+    </div>
+    <div class="quick-card" onclick="quickBook('I have a question about your services')">
+      <div class="qc-icon">💬</div>
+      <div class="qc-title">Ask a question</div>
+      <div class="qc-sub">We help right away</div>
+    </div>
+    <div class="quick-card" onclick="quickBook('I want to request a price quote')">
+      <div class="qc-icon">💶</div>
+      <div class="qc-title">Price quote</div>
+      <div class="qc-sub">Free estimate</div>
+    </div>
+  </div>
+</div>
+
+<!-- CALL CTA -->
+<button class="call-cta" id="callCtaBtn" onclick="toggleVoice()">
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="white"><path d="M6.6 10.8c1.4 2.8 3.8 5.1 6.6 6.6l2.2-2.2c.3-.3.7-.4 1-.2 1.1.4 2.3.6 3.6.6.6 0 1 .4 1 1V20c0 .6-.4 1-1 1-9.4 0-17-7.6-17-17 0-.6.4-1 1-1h3.5c.6 0 1 .4 1 1 0 1.3.2 2.5.6 3.6.1.3 0 .7-.2 1L6.6 10.8z"/></svg>
+  Call AI Receptionist
+</button>
+
+<!-- CALL OVERLAY -->
+<div class="call-overlay" id="callOverlay">
+  <div class="call-card">
+    <div class="call-av-wrap">
+      <div class="call-ring"></div>
+      <div class="call-ring"></div>
+      <div class="call-av">🔧</div>
+    </div>
+    <div class="call-name">Wagenbaas AI</div>
+    <div class="call-sub">AI Receptionist · 24/7</div>
+    <div class="call-status-text" id="callStatusText">Verbinden...</div>
+    <div class="call-timer" id="callTimerDisplay">0:00</div>
+    <div class="waveform" id="callWaveform">
+      <span></span><span></span><span></span><span></span><span></span>
+    </div>
+    <button class="call-end-btn" onclick="stopVoice()">📵</button>
+  </div>
+</div>
+
+<!-- CHAT -->
+<div class="chat-wrap" id="chatWrap">
+  <div class="chat-top">
+    <div class="chat-avatar">🔧</div>
+    <div class="chat-info">
+      <h3>Wagenbaas Assistant</h3>
+      <p><span class="online-dot"></span> Online · Responds instantly</p>
+    </div>
+  </div>
+  <div class="messages" id="messages"></div>
+  <div class="input-area">
+    <div class="input-row">
+      <textarea id="chatInput" rows="1" placeholder="Type your message..." onkeydown="handleKey(event)" oninput="autoResize(this)"></textarea>
+      <button class="mic-btn" id="micBtn" onclick="toggleVoice()" title="Spraakgesprek starten">
+        <svg width="14" height="14" viewBox="0 0 24 24"><path d="M12 1a4 4 0 0 1 4 4v7a4 4 0 0 1-8 0V5a4 4 0 0 1 4-4zm0 2a2 2 0 0 0-2 2v7a2 2 0 0 0 4 0V5a2 2 0 0 0-2-2zm-1 17.93V21h-2v2h6v-2h-2v-.07A8 8 0 0 0 20 13h-2a6 6 0 0 1-12 0H4a8 8 0 0 0 7 7.93z"/></svg>
+      </button>
+      <button class="send-btn" id="sendBtn" onclick="sendMessage()">
+        <svg width="14" height="14" viewBox="0 0 24 24"><path d="M2 21l21-9L2 3v7l15 2-15 2z"/></svg>
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- CONFIRMATION BANNER -->
+<div class="confirm-banner" id="confirmBanner">
+  ✅ Appointment requested! We will contact you shortly.
+</div>
+
+<!-- FOOTER -->
+<div class="footer">
+  <div class="footer-links">
+    <a href="tel:+31647700088">📞 +31 64 77 000 88</a>
+    <a href="mailto:info@wagenbaas.nl">✉️ info@wagenbaas.nl</a>
+    <a href="https://wagenbaas.nl" target="_blank">🌐 wagenbaas.nl</a>
+  </div>
+  <div class="footer-copy">© Wagenbaas · Molenmakershoek 10, Apeldoorn</div>
+</div>
+
+<script>
+  const WELCOME = "Hello! Welcome to Wagenbaas!\n\nI can help you book an appointment right away. What can I do for you?";
+
+  let history = [];
+  let busy = false;
+  const sessionId = Math.random().toString(36).slice(2);
+
+  function getTime() {
+    return new Date().toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit' });
+  }
+
+  function autoResize(el) {
+    el.style.height = 'auto';
+    el.style.height = Math.min(el.scrollHeight, 100) + 'px';
+  }
+
+  function handleKey(e) {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+  }
+
+  function addMsg(role, text) {
+    const wrap = document.getElementById('messages');
+    const div = document.createElement('div');
+    div.className = `msg ${role}`;
+    const av = document.createElement('div');
+    av.className = 'msg-avatar';
+    av.textContent = role === 'bot' ? '🔧' : '👤';
+    const body = document.createElement('div');
+    const bubble = document.createElement('div');
+    bubble.className = 'msg-bubble';
+    bubble.textContent = text;
+    body.appendChild(bubble);
+    div.appendChild(av);
+    div.appendChild(body);
+    wrap.appendChild(div);
+    wrap.scrollTop = wrap.scrollHeight;
+    return div;
+  }
+
+  function showTyping() {
+    const wrap = document.getElementById('messages');
+    const div = document.createElement('div');
+    div.className = 'msg bot'; div.id = 'typing';
+    const av = document.createElement('div');
+    av.className = 'msg-avatar'; av.textContent = '🔧';
+    const body = document.createElement('div');
+    const bubble = document.createElement('div');
+    bubble.className = 'msg-bubble typing-bubble';
+    bubble.innerHTML = '<div class="typing-dot"></div><div class="typing-dot"></div><div class="typing-dot"></div>';
+    body.appendChild(bubble); div.appendChild(av); div.appendChild(body);
+    wrap.appendChild(div); wrap.scrollTop = wrap.scrollHeight;
+  }
+
+  function removeTyping() {
+    document.getElementById('typing')?.remove();
+  }
+
+  function showToast(msg) {
+    const t = document.createElement('div');
+    t.className = 'toast'; t.textContent = msg;
+    document.body.appendChild(t);
+    setTimeout(() => t.remove(), 3000);
+  }
+
+  async function sendMessage() {
+    const input = document.getElementById('chatInput');
+    const text = input.value.trim();
+    if (!text || busy) return;
+    input.value = ''; input.style.height = 'auto';
+    busy = true;
+    document.getElementById('sendBtn').disabled = true;
+
+    addMsg('user', text);
+    history.push({ role: 'user', content: text });
+    showTyping();
+
+    try {
+      const res = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ messages: history, sessionId, channel: 'tiktok' }),
+      });
+      const data = await res.json();
+      removeTyping();
+
+      if (data.error) {
+        addMsg('bot', '⚠️ Er is een fout opgetreden. Probeer opnieuw.');
+      } else {
+        addMsg('bot', data.reply);
+        history.push({ role: 'assistant', content: data.reply });
+
+        if (data.appointment) {
+          document.getElementById('confirmBanner').style.display = 'block';
+          showToast('✅ Appointment booked!');
+        }
+        if (data.callback) showToast('📞 We will call you back!');
+      }
+    } catch {
+      removeTyping();
+      addMsg('bot', '⚠️ Verbindingsfout. Probeer opnieuw.');
+    }
+
+    busy = false;
+    document.getElementById('sendBtn').disabled = false;
+    document.getElementById('chatInput').focus();
+  }
+
+  function quickBook(text) {
+    document.getElementById('chatInput').value = text;
+    document.getElementById('chatWrap').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    setTimeout(sendMessage, 300);
+  }
+
+  // Auto welcome
+  setTimeout(() => addMsg('bot', WELCOME), 400);
+
+  // ── Voice Call — Web Speech API + /api/chat + SpeechSynthesis ────────────
+  const SR2=window.SpeechRecognition||window.webkitSpeechRecognition;
+  let vaActive=false,vaRec=null,vaTimerInt=null,vaSeconds=0,vaSpeaking=false,vaCallHistory=[];
+
+  const micBtn   = document.getElementById('micBtn');
+  const callCta  = document.getElementById('callCtaBtn');
+  const overlay  = document.getElementById('callOverlay');
+  const statusEl = document.getElementById('callStatusText');
+  const timerEl  = document.getElementById('callTimerDisplay');
+  const waveform = document.getElementById('callWaveform');
+
+  function vaSetStatus(t){ if(statusEl) statusEl.textContent=t; }
+  function vaSetWave(m){ if(waveform) waveform.className='waveform'+(m!=='idle'?' '+m:''); }
+
+  function vaShowOverlay(){
+    if(overlay) overlay.classList.add('show');
+    if(micBtn)  micBtn.classList.add('active');
+    if(callCta){ callCta.classList.add('on-call'); callCta.innerHTML='<svg width="16" height="16" viewBox="0 0 24 24" fill="white"><path d="M6.6 10.8c1.4 2.8 3.8 5.1 6.6 6.6l2.2-2.2c.3-.3.7-.4 1-.2 1.1.4 2.3.6 3.6.6.6 0 1 .4 1 1V20c0 .6-.4 1-1 1-9.4 0-17-7.6-17-17 0-.6.4-1 1-1h3.5c.6 0 1 .4 1 1 0 1.3.2 2.5.6 3.6.1.3 0 .7-.2 1L6.6 10.8z"/></svg>End Call'; }
+    vaSeconds=0; vaTimerInt=setInterval(()=>{ vaSeconds++; const m=Math.floor(vaSeconds/60),s=String(vaSeconds%60).padStart(2,'0'); if(timerEl) timerEl.textContent=`${m}:${s}`; },1000);
+    vaSetWave('idle');
+  }
+
+  function vaHideOverlay(){
+    if(overlay) overlay.classList.remove('show');
+    if(micBtn)  micBtn.classList.remove('active');
+    if(callCta){ callCta.classList.remove('on-call'); callCta.innerHTML='<svg width="16" height="16" viewBox="0 0 24 24" fill="white"><path d="M6.6 10.8c1.4 2.8 3.8 5.1 6.6 6.6l2.2-2.2c.3-.3.7-.4 1-.2 1.1.4 2.3.6 3.6.6.6 0 1 .4 1 1V20c0 .6-.4 1-1 1-9.4 0-17-7.6-17-17 0-.6.4-1 1-1h3.5c.6 0 1 .4 1 1 0 1.3.2 2.5.6 3.6.1.3 0 .7-.2 1L6.6 10.8z"/></svg>Call AI Receptionist'; }
+    clearInterval(vaTimerInt); if(timerEl) timerEl.textContent='0:00'; vaSetWave('idle');
+  }
+
+  function vaStop(){
+    vaActive=false; vaSpeaking=false; speechSynthesis.cancel();
+    if(vaRec){try{vaRec.stop();}catch{} vaRec=null;}
+    vaHideOverlay(); vaSetStatus('Connecting...');
+  }
+
+  function vaSpeak(text){
+    if(!vaActive) return;
+    vaSpeaking=true; vaSetStatus('AI responding...'); vaSetWave('speaking');
+    speechSynthesis.cancel();
+    const u=new SpeechSynthesisUtterance(text);
+    u.rate=1.05; u.pitch=1;
+    const voices=speechSynthesis.getVoices();
+    const pref=voices.find(v=>v.lang.startsWith('en')&&v.localService)||voices.find(v=>v.lang.startsWith('en'))||null;
+    if(pref) u.voice=pref;
+    u.onend=()=>{ vaSpeaking=false; if(vaActive){vaSetStatus('Your turn — speak now');vaSetWave('idle');vaListenOnce();} };
+    u.onerror=()=>{ vaSpeaking=false; if(vaActive){vaSetStatus('Your turn — speak now');vaSetWave('idle');vaListenOnce();} };
+    speechSynthesis.speak(u);
+  }
+
+  function vaListenOnce(){
+    if(!vaActive||vaSpeaking) return;
+    if(!SR2){vaStop();showToast('Voice requires Chrome or Edge');return;}
+    vaRec=new SR2(); vaRec.lang='en-US'; vaRec.interimResults=true; vaRec.maxAlternatives=1; vaRec.continuous=false;
+    vaSetStatus('Listening...'); vaSetWave('listening');
+    let final='';
+    vaRec.onresult=(e)=>{ let interim=''; for(let i=e.resultIndex;i<e.results.length;i++){if(e.results[i].isFinal)final+=e.results[i][0].transcript;else interim+=e.results[i][0].transcript;} if(interim)vaSetStatus('Heard: '+interim); };
+    vaRec.onend=async()=>{
+      if(!vaActive) return;
+      const text=final.trim();
+      if(!text){vaListenOnce();return;}
+      addMsg('user',text); vaCallHistory.push({role:'user',content:text});
+      vaSetStatus('Thinking...'); vaSetWave('idle');
+      try{
+        const res=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages:vaCallHistory.slice(-20),sessionId,channel:'voice-browser'})});
+        const d=await res.json(); if(!vaActive) return;
+        const reply=d.reply||'Sorry, could not process that.';
+        addMsg('bot',reply); vaCallHistory.push({role:'assistant',content:reply});
+        if(d.appointment){document.getElementById('confirmBanner').style.display='block';showToast('✅ Appointment booked!');}
+        if(d.callback) showToast('📞 We will call you back!');
+        vaSpeak(reply);
+      }catch{if(vaActive){vaSetStatus('Error — try again');vaListenOnce();}}
+    };
+    vaRec.onerror=(e)=>{ if(!vaActive)return; if(e.error==='not-allowed'){showToast('Microphone denied');vaStop();return;} if(vaActive)setTimeout(vaListenOnce,500); };
+    try{vaRec.start();}catch{setTimeout(vaListenOnce,300);}
+  }
+
+  async function vaStart(){
+    if(vaActive) return vaStop();
+    if(!SR2){showToast('Voice requires Chrome or Edge');return;}
+    try{const s=await navigator.mediaDevices.getUserMedia({audio:true});s.getTracks().forEach(t=>t.stop());}
+    catch{showToast('Microphone access denied');return;}
+    vaActive=true; vaCallHistory=[]; vaShowOverlay(); vaSetStatus('Starting call...');
+    const greeting='Hello! Welcome to Wagenbaas. How can I help you today?';
+    addMsg('bot',greeting); vaCallHistory.push({role:'assistant',content:greeting});
+    if(speechSynthesis.getVoices().length===0){speechSynthesis.onvoiceschanged=()=>{speechSynthesis.onvoiceschanged=null;vaSpeak(greeting);};}
+    else vaSpeak(greeting);
+  }
+
+  function toggleVoice(){ vaStart(); }
+  function stopVoice()  { vaStop(); }
+</script>
+</body>
+</html>
