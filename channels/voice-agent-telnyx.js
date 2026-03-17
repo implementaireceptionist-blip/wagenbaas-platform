@@ -394,10 +394,16 @@ function register(app, { server } = {}) {
     };
 
     // ── Silence detection — inject message if caller goes quiet ──────────────
-    function resetSilenceTimer() {
+    // Only starts after AI finishes speaking (AgentAudioDone).
+    // Stops immediately when caller makes any sound.
+    function startSilenceTimer() {
       if (silenceTimer) clearTimeout(silenceTimer);
       silenceStrike = 0;
       silenceTimer  = setTimeout(onSilence, 4000);
+    }
+    function stopSilenceTimer() {
+      if (silenceTimer) { clearTimeout(silenceTimer); silenceTimer = null; }
+      silenceStrike = 0;
     }
 
     // Detect caller language from transcript history (simple heuristic)
@@ -421,7 +427,7 @@ function register(app, { server } = {}) {
           : "Hallo? Bent u er nog? Ik kan u niet goed horen. Waarmee kan ik u helpen?";
         log("Silence detected (4 s) — injecting first alert");
         try { dgWs.send(JSON.stringify({ type: "InjectAgentMessage", message: msg })); } catch {}
-        silenceTimer = setTimeout(onSilence, 4000); // 4 s more → 8 s total
+        silenceTimer = setTimeout(onSilence, 4000); // 4 s after first alert → 8 s total
       } else {
         // Second alert — suggest alternative channels
         const smsOn = process.env.ENABLE_SMS      === "true";
@@ -519,8 +525,7 @@ function register(app, { server } = {}) {
 
           case "SettingsApplied":
             log("Deepgram: Settings applied — agent live");
-            // Start silence watch — caller has 4 s to say something after greeting
-            resetSilenceTimer();
+            // Do NOT start silence timer here — wait for AgentAudioDone (after greeting plays)
             break;
 
           case "ConversationText": {
@@ -534,12 +539,11 @@ function register(app, { server } = {}) {
             callHistory.set(sessionId, history);
 
             if (role === "user") {
-              // Caller spoke — reset silence counter fully
-              resetSilenceTimer();
+              // Caller spoke — stop silence timer (will restart on next AgentAudioDone)
+              stopSilenceTimer();
             } else {
-              // Agent finished a turn — pause silence timer while AI is speaking
-              // (it will restart on AgentAudioDone)
-              if (silenceTimer) { clearTimeout(silenceTimer); silenceTimer = null; }
+              // Agent turn logged — timer already stopped in AgentStartedSpeaking
+              // will restart on AgentAudioDone
             }
 
             // After each complete agent turn → try extract appointment
@@ -551,22 +555,20 @@ function register(app, { server } = {}) {
 
           case "UserStartedSpeaking":
             // ── FULL DUPLEX BARGE-IN ──────────────────────────────────────
-            // Deepgram stops its TTS. We must also flush Telnyx's audio buffer
-            // so the caller immediately hears silence (not buffered AI speech).
-            log("Caller speaking — flushing AI audio");
+            // Deepgram stops its TTS. Flush Telnyx buffer so buffered AI audio stops.
+            log("Caller speaking — flushing AI audio, stopping silence timer");
             flushTelnyxAudio();
-            // Reset silence timer — caller is active
-            resetSilenceTimer();
+            stopSilenceTimer();  // caller is active — stop the clock immediately
             break;
 
           case "AgentStartedSpeaking":
             log("Agent speaking");
+            stopSilenceTimer();  // AI is talking — no silence counting
             break;
 
           case "AgentAudioDone":
             log("Agent audio done");
-            // AI finished speaking — restart silence timer, caller has 4 s to respond
-            resetSilenceTimer();
+            startSilenceTimer();  // AI finished — start 4 s silence clock NOW
             break;
 
           case "Error":
@@ -645,7 +647,7 @@ function register(app, { server } = {}) {
 
     function cleanup() {
       clearInterval(keepAlive);
-      if (silenceTimer) clearTimeout(silenceTimer);
+      stopSilenceTimer();
       try { if (dgWs) dgWs.close(); } catch {}
     }
   });
