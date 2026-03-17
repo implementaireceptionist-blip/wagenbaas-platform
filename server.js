@@ -2,7 +2,6 @@ require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
 const rateLimit = require("express-rate-limit");
-const slowDown = require("express-slow-down");
 const helmet = require("helmet");
 const path = require("path");
 const crypto = require("crypto");
@@ -16,55 +15,34 @@ const server = http.createServer(app);
 const PORT = process.env.PORT || 3000;
 const ADMIN_TOKEN = process.env.ADMIN_TOKEN || "wagenbaas-admin-2024";
 
-// ── Security Headers (helmet) ─────────────────────────────────────────────────
+// ── Security headers — no CSP so the chat widget works freely ─────────────────
 app.use(helmet({
-  contentSecurityPolicy: {
-    directives: {
-      defaultSrc:  ["'self'"],
-      scriptSrc:   ["'self'", "'unsafe-inline'"],  // needed for inline chat widget
-      styleSrc:    ["'self'", "'unsafe-inline'"],
-      imgSrc:      ["'self'", "data:", "https:"],
-      connectSrc:  ["'self'", "wss:", "https:"],
-      fontSrc:     ["'self'", "https:", "data:"],
-      objectSrc:   ["'none'"],
-      frameSrc:    ["'none'"],
-      upgradeInsecureRequests: [],
-    },
-  },
-  crossOriginEmbedderPolicy: false,  // allow widget embeds
+  contentSecurityPolicy: false,        // CSP was breaking the chat UI
+  crossOriginEmbedderPolicy: false,
 }));
-
-// Hide server fingerprint
 app.disable("x-powered-by");
 
-// ── Brute-force tracking for admin ────────────────────────────────────────────
-const adminFailures = new Map(); // ip → { count, blockedUntil }
+// ── Admin brute-force protection ──────────────────────────────────────────────
+const adminFailures = new Map();
 
 function adminBruteCheck(req, res, next) {
-  const ip = req.ip || req.socket.remoteAddress || "unknown";
-  const now = Date.now();
+  const ip = req.ip || "unknown";
   const entry = adminFailures.get(ip) || { count: 0, blockedUntil: 0 };
-
-  if (entry.blockedUntil > now) {
-    const wait = Math.ceil((entry.blockedUntil - now) / 1000);
-    return res.status(429).json({ error: `Too many failed attempts. Try again in ${wait}s.` });
+  if (entry.blockedUntil > Date.now()) {
+    const secs = Math.ceil((entry.blockedUntil - Date.now()) / 1000);
+    return res.status(429).json({ error: `Too many failed attempts. Try again in ${secs}s.` });
   }
   req._adminIp = ip;
   next();
 }
-
 function recordAdminFailure(ip) {
-  const entry = adminFailures.get(ip) || { count: 0, blockedUntil: 0 };
-  entry.count += 1;
-  // Block for 5 min after 5 failures, 30 min after 10
-  if (entry.count >= 10) entry.blockedUntil = Date.now() + 30 * 60 * 1000;
-  else if (entry.count >= 5) entry.blockedUntil = Date.now() + 5 * 60 * 1000;
-  adminFailures.set(ip, entry);
+  const e = adminFailures.get(ip) || { count: 0, blockedUntil: 0 };
+  e.count += 1;
+  if (e.count >= 10) e.blockedUntil = Date.now() + 30 * 60 * 1000;
+  else if (e.count >= 5) e.blockedUntil = Date.now() + 5 * 60 * 1000;
+  adminFailures.set(ip, e);
 }
-
-function clearAdminFailure(ip) {
-  adminFailures.delete(ip);
-}
+function clearAdminFailure(ip) { adminFailures.delete(ip); }
 
 // ── CORS ──────────────────────────────────────────────────────────────────────
 app.use(cors({ origin: process.env.ALLOWED_ORIGIN || "*" }));
@@ -74,13 +52,12 @@ app.use(express.json({
   limit: "10kb",
   verify: (req, _res, buf) => { req.rawBody = buf; },
 }));
-app.use(express.urlencoded({ extended: true, limit: "50kb" }));
+app.use(express.urlencoded({ extended: true, limit: "2mb" }));
 
 // ── Static files ──────────────────────────────────────────────────────────────
 app.use(express.static(path.join(__dirname, "public")));
 
 // ── Rate limiting ─────────────────────────────────────────────────────────────
-// General API: 60 requests / 10 min per IP
 app.use("/api/", rateLimit({
   windowMs: 10 * 60 * 1000,
   max: 60,
@@ -89,54 +66,11 @@ app.use("/api/", rateLimit({
   message: { error: "Too many requests. Please slow down." },
 }));
 
-// Chat: slow down after 10 requests, hard limit at 30 / 10 min
-app.use("/api/chat", slowDown({
-  windowMs: 10 * 60 * 1000,
-  delayAfter: 10,
-  delayMs: () => 500,
-}));
-app.use("/api/chat", rateLimit({
-  windowMs: 10 * 60 * 1000,
-  max: 30,
-  message: { error: "Chat limit reached. Please wait a moment." },
-}));
-
-// Admin: max 20 requests / 10 min
 app.use("/api/admin/", rateLimit({
   windowMs: 10 * 60 * 1000,
   max: 20,
   message: { error: "Admin rate limit exceeded." },
 }));
-
-// Webhooks: max 200 / min (Telnyx can burst)
-app.use("/api/telnyx/", rateLimit({
-  windowMs: 60 * 1000,
-  max: 200,
-  message: { error: "Webhook rate limit exceeded." },
-}));
-
-// ── Block obviously malicious user-agents ─────────────────────────────────────
-const BAD_UA = /sqlmap|nikto|nmap|masscan|zgrab|python-requests\/2\.[0-4]|curl\/7\.[0-5]/i;
-app.use((req, res, next) => {
-  const ua = req.headers["user-agent"] || "";
-  if (BAD_UA.test(ua)) return res.status(403).json({ error: "Forbidden" });
-  next();
-});
-
-// ── Sanitize string inputs (strip null bytes + oversized fields) ───────────────
-function sanitize(val, maxLen = 2000) {
-  if (typeof val !== "string") return val;
-  return val.replace(/\0/g, "").slice(0, maxLen);
-}
-
-app.use((req, _res, next) => {
-  if (req.body && typeof req.body === "object") {
-    for (const key of Object.keys(req.body)) {
-      if (typeof req.body[key] === "string") req.body[key] = sanitize(req.body[key]);
-    }
-  }
-  next();
-});
 
 registerCalendarRoutes(app);
 
@@ -147,9 +81,9 @@ const channels = {
   whatsapp:         process.env.ENABLE_WHATSAPP         === "true",
   facebook:         process.env.ENABLE_FACEBOOK         === "true",
   instagram:        process.env.ENABLE_INSTAGRAM        === "true",
-  voice:            process.env.ENABLE_VOICE            === "true",        // Telnyx (legacy)
-  voiceAgentTelnyx: process.env.ENABLE_VOICE_TELNYX     === "true",        // Telnyx + Deepgram (recommended)
-  voiceAgent:       process.env.ENABLE_VOICE_AGENT      === "true",        // Twilio + Deepgram
+  voice:            process.env.ENABLE_VOICE            === "true",
+  voiceAgentTelnyx: process.env.ENABLE_VOICE_TELNYX     === "true",
+  voiceAgent:       process.env.ENABLE_VOICE_AGENT      === "true",
   voiceAgentBrowser:process.env.ENABLE_VOICE_AGENT      === "true",
 };
 
@@ -165,9 +99,7 @@ if (channels.voiceAgentBrowser) require("./channels/voice-agent-browser").regist
 
 // ── Welcome ───────────────────────────────────────────────────────────────────
 app.get("/api/welcome", (req, res) => {
-  res.json({
-    message: "Welkom. How can I help you with?"
-  });
+  res.json({ message: "Welkom. How can I help you with?" });
 });
 
 // ── Main Chat API ─────────────────────────────────────────────────────────────
@@ -224,11 +156,7 @@ app.post("/api/chat", async (req, res) => {
           `Kanaal: ${channel}`,
         ].filter(Boolean).join("\n");
         await createAppointmentEvent({
-          summary,
-          description,
-          date,
-          time,
-          durationMinutes: 60,
+          summary, description, date, time, durationMinutes: 60,
           attendees: appointment.email ? [{ email: appointment.email }] : [],
         });
       }
@@ -238,19 +166,10 @@ app.post("/api/chat", async (req, res) => {
       db.insertStat({ $event: "callback_requested", $channel: channel, $meta: callback.phone });
     }
     if (lead) {
-      const baseLead = {
-        $name:  lead.name  || "",
-        $phone: lead.phone || "",
-        $email: lead.email || "",
-        $source: channel,
-        $notes: lead.notes || "",
-      };
+      const baseLead = { $name: lead.name||"", $phone: lead.phone||"", $email: lead.email||"", $source: channel, $notes: lead.notes||"" };
       const existingLead = db.findLeadByContact({ $phone: baseLead.$phone, $email: baseLead.$email });
-      if (existingLead) {
-        db.updateLead({ ...baseLead, $id: existingLead.id });
-      } else {
-        db.insertLead(baseLead);
-      }
+      if (existingLead) db.updateLead({ ...baseLead, $id: existingLead.id });
+      else db.insertLead(baseLead);
       db.insertStat({ $event: "lead_captured", $channel: channel, $meta: baseLead.$phone || baseLead.$email || null });
     }
 
@@ -258,7 +177,7 @@ app.post("/api/chat", async (req, res) => {
 
   } catch (err) {
     console.error("AI error:", err.message);
-    res.status(500).json({ error: "Er is een fout opgetreden. Controleer uw API sleutel." });
+    res.status(500).json({ error: "Something went wrong. Please try again or contact us at +31 64 77 000 88." });
   }
 });
 
@@ -322,7 +241,7 @@ app.get("*", (req, res) => res.sendFile(path.join(__dirname, "public", "index.ht
 // ── Start ─────────────────────────────────────────────────────────────────────
 initDB().then(() => {
   server.listen(PORT, () => {
-    console.log(`\n🚗 Implementit Platform → http://localhost:${PORT}`);
+    console.log(`\n🚗 Wagenbaas Platform → http://localhost:${PORT}`);
     console.log(`🤖 AI: ${AI_PROVIDER.toUpperCase()}`);
     console.log(`🎵 TikTok booking page → http://localhost:${PORT}/tiktok`);
     console.log(`🔐 Admin → http://localhost:${PORT}/admin  (token: ${ADMIN_TOKEN})`);
