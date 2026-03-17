@@ -60,10 +60,18 @@ async function initDB() {
       duration     INTEGER DEFAULT 0,
       created_at   DATETIME DEFAULT (datetime('now'))
     );
+    CREATE TABLE IF NOT EXISTS declined (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      name       TEXT, phone TEXT, email TEXT,
+      reason     TEXT,
+      channel    TEXT DEFAULT 'webchat',
+      created_at DATETIME DEFAULT (datetime('now'))
+    );
   `);
   // Migrate existing DBs — add columns if they don't exist yet
   try { db.run(`ALTER TABLE appointments ADD COLUMN voice_session_id TEXT`); } catch {}
   try { db.run(`ALTER TABLE appointments ADD COLUMN confidence TEXT DEFAULT 'confirmed'`); } catch {}
+  try { db.run(`ALTER TABLE declined ADD COLUMN channel TEXT DEFAULT 'webchat'`); } catch {}
 
   save();
 }
@@ -160,6 +168,10 @@ const db_ops = {
   insertMissedCall: (p) => run(`INSERT INTO missed_calls (caller,call_sid,status,duration) VALUES ($caller,$call_sid,$status,$duration)`, p),
   allMissedCalls: () => all(`SELECT * FROM missed_calls ORDER BY id DESC LIMIT 100`),
   updateMissedCallStatus: (p) => run(`UPDATE missed_calls SET status=$status WHERE id=$id`, p),
+
+  // Declined
+  insertDeclined: (p) => run(`INSERT INTO declined (name,phone,email,reason,channel) VALUES ($name,$phone,$email,$reason,$channel)`, p),
+  allDeclined: () => all(`SELECT * FROM declined ORDER BY id DESC`),
 };
 
 module.exports = { initDB, db: db_ops };

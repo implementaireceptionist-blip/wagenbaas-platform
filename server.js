@@ -122,8 +122,8 @@ app.post("/api/chat", async (req, res) => {
   }
 
   try {
-    const rawReply = await getAIReply(trimmed);
-    const { appointment, lead, callback } = extractData(rawReply);
+    const rawReply = await getAIReply(trimmed, { channel, knownPhone: "", knownEmail: "" });
+    const { appointment, lead, callback, declined } = extractData(rawReply);
     const reply = cleanReply(rawReply);
 
     db.insertMessage({ $session_id: sid, $channel: channel, $direction: "outbound", $from_id: "wagenbaas", $from_name: "Wagenbaas AI", $content: reply });
@@ -172,6 +172,10 @@ app.post("/api/chat", async (req, res) => {
       else db.insertLead(baseLead);
       db.insertStat({ $event: "lead_captured", $channel: channel, $meta: baseLead.$phone || baseLead.$email || null });
     }
+    if (declined) {
+      db.insertDeclined({ $name: declined.name||"", $phone: declined.phone||"", $email: declined.email||"", $reason: declined.reason||"", $channel: channel });
+      db.insertStat({ $event: "declined", $channel: channel, $meta: declined.phone || declined.email || null });
+    }
 
     res.json({ reply, sessionId: sid, appointment: !!appointment, callback: !!callback, lead: !!lead });
 
@@ -206,6 +210,7 @@ app.get("/api/admin/dashboard", adminAuth, (req, res) => {
     leads:          db.allLeads(),
     messages:       db.allMessages(),
     missedCalls:    db.allMissedCalls(),
+    declined:       db.allDeclined(),
     stats:          db.statsCount(),
     todayStats:     db.todayStats(),
     channelStats:   db.channelStats(),
@@ -267,4 +272,66 @@ initDB().then(() => {
     Object.entries(channels).forEach(([k,v]) => console.log(`   ${v ? '✅' : '⬜'} ${k}`));
     console.log('');
   });
+
+  // ── Weekly Friday report ───────────────────────────────────────────────────
+  let lastReportDate = "";
+  setInterval(async () => {
+    const now = new Date();
+    const isFriday = now.getDay() === 5;
+    const isReportHour = now.getHours() === 17;
+    const todayStr = now.toISOString().slice(0, 10);
+    if (!isFriday || !isReportHour || lastReportDate === todayStr) return;
+    lastReportDate = todayStr;
+
+    const emailOwner = process.env.EMAIL_OWNER || "info@wagenbaas.nl";
+    try {
+      const { sendEmail, configured } = require("./channels/email");
+      if (!configured) { console.log("Weekly report: email not configured"); return; }
+
+      const appts    = db.allAppointments();
+      const cbs      = db.allCallbacks();
+      const leads    = db.allLeads();
+      const declines = db.allDeclined();
+      const stats    = db.statsCount();
+      const chStats  = db.channelStats();
+
+      const weekStart = new Date(now); weekStart.setDate(now.getDate() - 6);
+      const weekStartStr = weekStart.toISOString().slice(0, 10);
+
+      const thisWeekAppts = appts.filter(a => a.created_at >= weekStartStr);
+      const thisWeekCbs   = cbs.filter(c => c.created_at >= weekStartStr);
+      const thisWeekLeads = leads.filter(l => l.created_at >= weekStartStr);
+
+      const lines = [
+        `WAGENBAAS — WEEKLY REPORT ${weekStartStr} to ${todayStr}`,
+        `=========================================================`,
+        ``,
+        `APPOINTMENTS THIS WEEK: ${thisWeekAppts.length}`,
+        ...thisWeekAppts.map(a => `  • ${a.name || "?"} | ${a.pref_date || "?"} ${a.pref_time || ""} | ${a.service || "?"} | Status: ${a.status} | Channel: ${a.channel}`),
+        ``,
+        `CALLBACKS PENDING: ${thisWeekCbs.filter(c => c.status !== "afgerond").length}`,
+        ...thisWeekCbs.filter(c => c.status !== "afgerond").map(c => `  • ${c.name || "?"} | ${c.phone || "?"} | ${c.reason || "?"} | Channel: ${c.channel}`),
+        ``,
+        `NEW LEADS THIS WEEK: ${thisWeekLeads.length}`,
+        ...thisWeekLeads.map(l => `  • ${l.name || "?"} | ${l.phone || l.email || "?"} | ${l.notes || ""}`),
+        ``,
+        `DECLINED (no appointment, no callback): ${declines.length} total`,
+        ``,
+        `CHANNEL ACTIVITY (all time):`,
+        ...chStats.map(c => `  • ${c.channel}: ${c.count} messages`),
+        ``,
+        `ALL-TIME TOTALS:`,
+        `  Appointments: ${appts.length}`,
+        `  Callbacks: ${cbs.length}`,
+        `  Leads: ${leads.length}`,
+        ``,
+        `Generated automatically by Wagenbaas AI — ${new Date().toISOString()}`,
+      ];
+
+      await sendEmail(emailOwner, `📊 Wagenbaas Weekly Report — ${todayStr}`, lines.join("\n"));
+      console.log(`✅ Weekly report sent to ${emailOwner}`);
+    } catch (err) {
+      console.error("Weekly report error:", err.message);
+    }
+  }, 30 * 60 * 1000); // check every 30 minutes
 }).catch(err => { console.error("DB error:", err); process.exit(1); });

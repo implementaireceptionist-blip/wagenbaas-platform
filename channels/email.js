@@ -1,7 +1,8 @@
 const multer = require("multer");
 const nodemailer = require("nodemailer");
-const { getEmailReply } = require("../ai");
+const { getEmailReply, extractData, cleanReply } = require("../ai");
 const { db } = require("../database");
+const { createAppointmentEvent } = require("../calendar");
 
 const CHANNEL = "email";
 const upload = multer();
@@ -41,9 +42,36 @@ function register(app) {
 
       const aiReply = await getEmailReply(fromName, fromEmail, subject, body.substring(0, 2000));
 
-      db.insertMessage({ $session_id: fromEmail, $channel: CHANNEL, $direction: "outbound", $from_id: "wagenbaas", $from_name: "Wagenbaas AI", $content: aiReply });
+      const { appointment, lead, callback, declined } = extractData(aiReply);
+      const cleanedReply = cleanReply(aiReply);
 
-      await sendEmail(fromEmail, `Re: ${subject}`, aiReply);
+      if (appointment) {
+        db.insertAppointment({ $name: appointment.name||fromName, $phone: appointment.phone||"", $email: appointment.email||fromEmail, $car_brand: appointment.car_brand||"", $car_model: appointment.car_model||"", $car_year: appointment.car_year||"", $license: appointment.license||"", $service: appointment.service||"", $pref_date: appointment.pref_date||"", $pref_time: appointment.pref_time||"", $notes: appointment.notes||"", $channel: CHANNEL });
+        db.insertStat({ $event: "appointment_booked", $channel: CHANNEL, $meta: appointment.service||null });
+        const hasDateTime = /^\d{4}-\d{2}-\d{2}$/.test(appointment.pref_date||"") && /^\d{2}:\d{2}$/.test(appointment.pref_time||"");
+        if (hasDateTime && process.env.GOOGLE_REFRESH_TOKEN) {
+          try {
+            await createAppointmentEvent({
+              summary: `Wagenbaas afspraak: ${appointment.service||"Service"} (${appointment.license||"zonder kenteken"})`,
+              description: `Naam: ${appointment.name||fromName}\nEmail: ${fromEmail}\nService: ${appointment.service||""}\nKanaal: ${CHANNEL}`,
+              date: appointment.pref_date, time: appointment.pref_time, durationMinutes: 60,
+              attendees: [{ email: fromEmail }],
+            });
+          } catch {}
+        }
+      }
+      if (lead) {
+        const baseLead = { $name: lead.name||fromName, $phone: lead.phone||"", $email: lead.email||fromEmail, $source: CHANNEL, $notes: lead.notes||"" };
+        const existing = db.findLeadByContact({ $phone: baseLead.$phone, $email: baseLead.$email });
+        if (existing) db.updateLead({ ...baseLead, $id: existing.id });
+        else db.insertLead(baseLead);
+      }
+      if (callback) db.insertCallback({ $name: callback.name||fromName, $phone: callback.phone||"", $reason: callback.reason||"", $channel: CHANNEL });
+      if (declined) db.insertDeclined({ $name: declined.name||fromName, $phone: declined.phone||"", $email: declined.email||fromEmail, $reason: declined.reason||"", $channel: CHANNEL });
+
+      db.insertMessage({ $session_id: fromEmail, $channel: CHANNEL, $direction: "outbound", $from_id: "wagenbaas", $from_name: "Wagenbaas AI", $content: cleanedReply });
+
+      await sendEmail(fromEmail, `Re: ${subject}`, cleanedReply);
       await sendEmail(EMAIL_OWNER, `📧 Nieuw bericht van ${fromName}: ${subject}`, `Van: ${fromName} <${fromEmail}>\n\nBericht:\n${body}\n\n--- AI Antwoord ---\n${aiReply}`);
 
       res.sendStatus(200);

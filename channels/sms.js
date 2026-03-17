@@ -35,8 +35,8 @@ function register(app) {
         content: m.content,
       }));
 
-      const rawReply = await getAIReply(history);
-      const { appointment, callback, lead } = extractData(rawReply);
+      const rawReply = await getAIReply(history, { channel: CHANNEL, knownPhone: from });
+      const { appointment, callback, lead, declined } = extractData(rawReply);
       const reply = cleanReply(rawReply);
 
       db.insertMessage({ $session_id: from, $channel: CHANNEL, $direction: "outbound", $from_id: "wagenbaas", $from_name: "Wagenbaas AI", $content: reply });
@@ -58,6 +58,7 @@ function register(app) {
           db.insertLead(baseLead);
         }
       }
+      if (declined) db.insertDeclined({ $name: declined.name||"", $phone: declined.phone||from, $email: declined.email||"", $reason: declined.reason||"", $channel: CHANNEL });
 
       await sendSMS(from, reply);
       res.sendStatus(200);
