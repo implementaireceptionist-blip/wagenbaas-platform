@@ -994,6 +994,10 @@
   function toggleVoice(){ vaStart(); }
   function stopVoice()  { vaStop();  }
 
+  // Wake up Render free-tier server immediately on page load
+  // (prevents 30-50s cold-start delay on first chat message)
+  fetch('/api/ping').catch(()=>{});
+
   // Auto welcome
   (async()=>{
     try{

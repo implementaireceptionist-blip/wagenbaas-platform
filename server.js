@@ -236,6 +236,7 @@ app.patch("/api/admin/callbacks/:id", adminAuth, (req, res) => {
 });
 
 // ── Routes ────────────────────────────────────────────────────────────────────
+app.get("/api/ping",   (req, res) => res.sendStatus(200));
 app.get("/api/health", (req, res) => res.json({
   status:   "ok",
   provider: AI_PROVIDER,
@@ -249,6 +250,13 @@ app.get("/admin", (req, res) => res.sendFile(path.join(__dirname, "public", "adm
 app.get("*", (req, res) => res.sendFile(path.join(__dirname, "public", "index.html")));
 
 // ── Start ─────────────────────────────────────────────────────────────────────
+// Startup key check — visible in Render logs
+if (!process.env.ANTHROPIC_API_KEY) {
+  console.error("⚠️  WARNING: ANTHROPIC_API_KEY is not set — AI chat will fail!");
+} else {
+  console.log("✅ ANTHROPIC_API_KEY detected");
+}
+
 initDB().then(() => {
   server.listen(PORT, () => {
     console.log(`\n🚗 Wagenbaas Platform → http://localhost:${PORT}`);
